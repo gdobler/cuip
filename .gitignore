@@ -10,6 +10,10 @@
 __pycache__/*
 .cache/*
 .*.swp
+\#*
+
+# C extensions
+*.so
 
 # Project files
 .ropeproject
@@ -30,6 +34,11 @@ htmlcov/*
 .tox
 junit.xml
 coverage.xml
+.cache
+nosetests.xml
+coverage.xml
+*,cover
+.hypothesis/
 
 # Build and docs folder/files
 build/*
@@ -39,3 +48,20 @@ docs/api/*
 docs/_build/*
 cover/*
 MANIFEST
+
+# Ipython Notebooks
+.ipynb_checkpoints
+
+# Logs
+logs/
+*.log
+
+# Installer logs
+pip-log.txt
+pip-delete-this-directory.txt
+
+# PyInstaller
+#  Usually these files are written by a python script from a template
+#  before PyInstaller builds the exe, so as to inject date/other infos into it.
+*.manifest
+*.spec
