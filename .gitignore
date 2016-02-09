@@ -1,6 +1,7 @@
 # Temporary and binary files
 *~
 *.py[cod]
+*.py~
 *.so
 *.cfg
 !setup.cfg
@@ -11,6 +12,9 @@ __pycache__/*
 .cache/*
 .*.swp
 \#*
+
+#ipython checkpoints
+ipynb_checkpoin[ts]/*
 
 # C extensions
 *.so

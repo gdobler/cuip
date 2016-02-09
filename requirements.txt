@@ -5,3 +5,7 @@
 sphinx
 wheel
 versioneer
+numpy
+pandas
+matplotlib
+
