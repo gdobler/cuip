@@ -1,0 +1,71 @@
+Jane Austen House Passaic Park (KNJPASSA2)	46.3°
+Bloomfield Green Historic District (KNJNEWJE25)	45.9°
+Bolten Pl. (KNJBLOOM6)	  44.6°
+Saint Albans (KNYNEWYO329)	49.3°
+Brick Church (KNJEASTO3)	44.4°
+New York JFK (KJFK)		50°
+Near Knickerbocker Golf & Country Club (KNJTENAF1)	45.1°
+Dodd House (KNJMONTC3)	43°
+Harlem Yacht Club (KNYCITYI2)	49.4°
+Kean University Science Building Rooftop (KNJUNION2)	46.5°
+Lakeview (KNJCLIFT16)	44.8°
+New Bridge (KNJNEWMI2)	45.7°
+Just West of Town Hall (KNYFLORA5)	48.4°
+Residential (KNJSADDL2)			46°
+Crestmont Road (KNJCEDAR4)		42.5°
+Upper Gregory (KNJWESTO9)		43.9°
+Roselle Park (KNJROSEL2)		44.9°
+Redwood (KNJWESTO4)			42.6°
+New Hyde Park (KNYNEWHY6)		48°
+Fair Lawn, CALMAC Manufacturing (KNJFAIRL4)	45.5°
+SOUTHSIDE (KNJCRANF9)		43.2°
+(MSDHN4)  49°
+East (KNJRIDGE6)	45.7°
+KD2EDX (KNYMINEO3)	48°
+Larchmont Hrbr (KNYLARCH4)	48°
+(ME5276)  45°
+(ME5534)  46°
+Baker Rd (KNJLIVIN2)	44.1°
+Summit MUNI (KNJSUMMI2)	44.5°
+Woodcliff Lake (KNJWOODC2)	46.2°
+Middletown (KNJMIDDL2)		46.9°
+East Hanover (Real time) (KNJEASTH2)	43.1°
+Port Monmouth (KNJMIDDL6)		46.2°
+Old Homestead (KNJWAYNE9)		42.8°
+North Edison (Inman Grove Area) (KNJEDISO2)	43.9°
+Ardsley Park (KNYIRVIN4)  46.6°
+North Merrick, NY (KNYMERRI5)	48°
+Lighthouse Bay (KNJSOUTH40)	45.5°
+Packanack Lake Area (KNJWAYNE5)	43.8°
+South Amboy Mechanicsville (KNJSOUTH29)	44.1°
+Morgan NJ (KNJSOUTH21)	   45°
+Woodrow Wilson MS (KNJEDISO8)	44.3°
+Levittown (KNYLEVIT14)		48°
+Near ATT (KNJMIDDL3)		46.2°
+C.C. SOUTH, HICKSVILLE, N.Y. (KNYHICKS7)	47.8°
+Bridgeworks (KNYNYACK11)     48.6°
+East Norwich NY (KNYEASTN10) 46.8°
+Lake Intervale (KNJPARSI1)   42.8°
+Colts Glen (KNJREDBA9)	     46.2°
+(MAS690)   46°
+Seaford NY (KNYSEAFO3)	49.5°
+Harding Township (KNJNEWVE3)	42.3°
+Kendall Sculpture Gardens (KNYPURCH3)	45.8°
+Dunellen (KNJDUNEL2)	  44.1°
+Glenville (KCTGREEN5)	  47.3°
+Massapequa Shores (KNYMASSA11)	48.6°
+Morristown - Rolling Hill (KNJMORRI28)	41.2°
+North Massapequa (KNYMASSA20)		47.5°
+Kinnelon, NJ (KNJKINNE4)		41.1°
+RTP Environmental Associates, Rt 22 E (KNJGREEN2)	42.5°
+South Farmingdale (KNYFARMI11)	 47.5°
+Cedar Lake Lagoon (KNJDENVI14)	 41.8°
+Holmdel Village (KNJHOLMD8)	 45.7°
+Nassau/Suffolk County Line (KNYEASTF1)	47.9°
+Massapequa Park - Westwood Section (KNYMASSA12)	48.6°
+Northwest Greenwich (KCTGREEN55)   45.9°
+Erskine Lakes (KNJRINGW8)	   42.1°
+Milltown, NJ (KNJMILLT2)	   45.6°
+Shongum Lake (KNJRANDO9)	   39.8°
+Westover (KCTSTAMF55)		   46.6°
+(MDEAN4) 46°
