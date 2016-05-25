@@ -87,13 +87,16 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT()):
     # this as well. Maybe brute force is better if we go with multiple
     # subsamples to register image (instead of entire image)
     flann = cv2.FlannBasedMatcher(index_params, search_params)
+    # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
+    bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
 
     # The actual SIFT computations
     kp1, des1 = detectAlgo.detectAndCompute(img1, None)
     kp2, des2 = detectAlgo.detectAndCompute(img2, None)
 
     # The actual matching computation
-    matches = flann.knnMatch(des1, des2, k=1)
+    # matches = flann.knnMatch(des1, des2, k=1)
+    matches = bf.knnMatch(des1, des2, k=1)
     # Need to flatten the match array
     m2 = [matches[i][0] for i in range(len(matches))]
 
@@ -107,7 +110,7 @@ if __name__ == '__main__':
     fname = '/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw'
     img = np.fromfile(fname, dtype=np.uint8)
     img = img.reshape(2160, 4096, 3)[:, :, ::-1]
-    im4 = feature_match(img[300:800, 300:800, :], img, cv2.SURF())
+    im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
     pl.imshow(im4)
     # Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
