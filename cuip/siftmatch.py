@@ -68,6 +68,38 @@ def drawMatches(img1, kp1, img2, kp2, matches):
     # Show the image
     return out
 
+def surf_match(img1, img2):
+    """
+    Find features in images img1 and img2 using SURF, then output a new image
+    that shows matching features between the two images.
+    """
+
+    #There are other algorithms that we can try here too though the
+    #implementation will be different.
+    surf = cv2.SURF()
+
+    #The paramters in these dictionaries can and probably should be played with
+    index_params = dict(algorithm = 1, trees = 5)
+    search_params = dict(checks = 20)
+
+    #FLANN is an optimized matcher (versus brute force), so should play with
+    #this as well. Maybe brute force is better if we go with multiple
+    #subsamples to register image (instead of entire image)
+    flann = cv2.FlannBasedMatcher(index_params, search_params)
+
+    #The actual SIFT computations
+    kp1, des1 = surf.detectAndCompute(img1, None)
+    kp2, des2 = surf.detectAndCompute(img2, None)
+
+    #The actual matching computation
+    matches = flann.knnMatch(des1, des2, k = 1)
+    #Need to flatten the match array
+    m2 = [matches[i][0] for i in range(len(matches))]
+
+    #Now pass the images with their sets of  SIFT keypoints and the map of
+    #matches and return the resulting image
+    return drawMatches(img1[:,:,0], kp1, img2[:,:,0], kp2, m2)
+
 def sift_match(img1, img2):
     """
     Find features in images img1 and img2 using SIFT, then output a new image
@@ -105,7 +137,7 @@ if __name__ == '__main__':
     img = np.fromfile('/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw',
             dtype=np.uint8)
     img = img.reshape(2160,4096,3)[:,:,::-1]
-    im4 = sift_match(img[300:800,300:800,:], img)
+    im4 = surf_match(img[300:800,300:800,:], img)
     pl.imshow(im4)
     #Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
