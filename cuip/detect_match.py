@@ -1,5 +1,5 @@
 """
-siftmatch.py
+detect_match.py
 Author: Chris Prince [cmp670@nyu.edu]
 Date: 25 May 2016
 """
@@ -7,6 +7,7 @@ Date: 25 May 2016
 import cv2
 import numpy as np
 import pylab as pl
+
 
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
@@ -39,11 +40,11 @@ def drawMatches(img1, kp1, img2, kp2, matches):
     cols1 = img1.shape[1]
     rows2 = img2.shape[0]
     cols2 = img2.shape[1]
-    out = np.zeros((max([rows1,rows2]),cols1+cols2,3), dtype='uint8')
+    out = np.zeros((max([rows1, rows2]), cols1+cols2, 3), dtype='uint8')
     # Place the first image to the left
-    out[:rows1,:cols1,:] = np.dstack([img1, img1, img1])
+    out[:rows1, :cols1, :] = np.dstack([img1, img1, img1])
     # Place the next image to the right of it
-    out[:rows2,cols1:cols1+cols2,:] = np.dstack([img2, img2, img2])
+    out[:rows2, cols1:cols1+cols2, :] = np.dstack([img2, img2, img2])
     # For each pair of points we have between both images
     # draw circles, then connect a line between them
     for mat in matches:
@@ -53,49 +54,52 @@ def drawMatches(img1, kp1, img2, kp2, matches):
         img2_idx = mat.trainIdx
         # x - columns
         # y - rows
-        (x1,y1) = kp1[img1_idx].pt
-        (x2,y2) = kp2[img2_idx].pt
+        (x1, y1) = kp1[img1_idx].pt
+        (x2, y2) = kp2[img2_idx].pt
         # Draw a small circle at both co-ordinates
         # radius 4
         # colour blue
         # thickness = 1
-        cv2.circle(out, (int(x1),int(y1)), 4, (255, 0, 0), 1)
-        cv2.circle(out, (int(x2)+cols1,int(y2)), 4, (255, 0, 0), 1)
+        cv2.circle(out, (int(x1), int(y1)), 4, (255, 0, 0), 1)
+        cv2.circle(out, (int(x2)+cols1, int(y2)), 4, (255, 0, 0), 1)
         # Draw a line in between the two points
         # thickness = 1
         # colour blue
-        cv2.line(out, (int(x1),int(y1)), (int(x2)+cols1,int(y2)), (255, 0, 0), 1)
+        cv2.line(out, (int(x1), int(y1)),
+                 (int(x2)+cols1, int(y2)), (255, 0, 0), 1)
     # Show the image
     return out
 
-def feature_match(img1, img2, detectAlgo = cv2.SIFT()):
+
+def feature_match(img1, img2, detectAlgo=cv2.SIFT()):
     """
     Find features in images img1 and img2 using a detection algorithm (default
-    is cv2.SIFT(), then output a new image that shows matching features between
+    is cv2.SIFT), then output a new image that shows matching features between
     the two images.
     """
 
-    #The paramters in these dictionaries can and probably should be played with
-    index_params = dict(algorithm = 1, trees = 5)
-    search_params = dict(checks = 20)
+    # The paramters in these dictionaries can and probably should be
+    # played with
+    index_params = dict(algorithm=1, trees=5)
+    search_params = dict(checks=20)
 
-    #FLANN is an optimized matcher (versus brute force), so should play with
-    #this as well. Maybe brute force is better if we go with multiple
-    #subsamples to register image (instead of entire image)
+    # FLANN is an optimized matcher (versus brute force), so should play with
+    # this as well. Maybe brute force is better if we go with multiple
+    # subsamples to register image (instead of entire image)
     flann = cv2.FlannBasedMatcher(index_params, search_params)
 
-    #The actual SIFT computations
+    # The actual SIFT computations
     kp1, des1 = detectAlgo.detectAndCompute(img1, None)
     kp2, des2 = detectAlgo.detectAndCompute(img2, None)
 
-    #The actual matching computation
-    matches = flann.knnMatch(des1, des2, k = 1)
-    #Need to flatten the match array
+    # The actual matching computation
+    matches = flann.knnMatch(des1, des2, k=1)
+    # Need to flatten the match array
     m2 = [matches[i][0] for i in range(len(matches))]
 
-    #Now pass the images with their sets of  SIFT keypoints and the map of
-    #matches and return the resulting image
-    return drawMatches(img1[:,:,0], kp1, img2[:,:,0], kp2, m2)
+    # Now pass the images with their sets of  SIFT keypoints and the map of
+    # matches and return the resulting image
+    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, m2)
 
 
 def surf_match(img1, img2):
@@ -104,31 +108,33 @@ def surf_match(img1, img2):
     that shows matching features between the two images.
     """
 
-    #There are other algorithms that we can try here too though the
-    #implementation will be different.
+    # There are other algorithms that we can try here too though the
+    # implementation will be different.
     surf = cv2.SURF()
 
-    #The paramters in these dictionaries can and probably should be played with
-    index_params = dict(algorithm = 1, trees = 5)
-    search_params = dict(checks = 20)
+    # The paramters in these dictionaries can and probably should be
+    # played with
+    index_params = dict(algorithm=1, trees=5)
+    search_params = dict(checks=20)
 
-    #FLANN is an optimized matcher (versus brute force), so should play with
-    #this as well. Maybe brute force is better if we go with multiple
-    #subsamples to register image (instead of entire image)
+    # FLANN is an optimized matcher (versus brute force), so should play with
+    # this as well. Maybe brute force is better if we go with multiple
+    # subsamples to register image (instead of entire image)
     flann = cv2.FlannBasedMatcher(index_params, search_params)
 
-    #The actual SIFT computations
+    # The actual SIFT computations
     kp1, des1 = surf.detectAndCompute(img1, None)
     kp2, des2 = surf.detectAndCompute(img2, None)
 
-    #The actual matching computation
-    matches = flann.knnMatch(des1, des2, k = 1)
-    #Need to flatten the match array
+    # The actual matching computation
+    matches = flann.knnMatch(des1, des2, k=1)
+    # Need to flatten the match array
     m2 = [matches[i][0] for i in range(len(matches))]
 
-    #Now pass the images with their sets of  SIFT keypoints and the map of
-    #matches and return the resulting image
-    return drawMatches(img1[:,:,0], kp1, img2[:,:,0], kp2, m2)
+    # Now pass the images with their sets of  SIFT keypoints and the map of
+    # matches and return the resulting image
+    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, m2)
+
 
 def sift_match(img1, img2):
     """
@@ -136,39 +142,39 @@ def sift_match(img1, img2):
     that shows matching features between the two images.
     """
 
-    #There are other algorithms that we can try here too though the
-    #implementation will be different.
+    # There are other algorithms that we can try here too though the
+    # implementation will be different.
     sift = cv2.SIFT()
 
-    #The paramters in these dictionaries can and probably should be played with
-    index_params = dict(algorithm = 1, trees = 5)
-    search_params = dict(checks = 20)
+    # The paramters in these dictionaries can and probably should be
+    # played with
+    index_params = dict(algorithm=1, trees=5)
+    search_params = dict(checks=20)
 
-    #FLANN is an optimized matcher (versus brute force), so should play with
-    #this as well. Maybe brute force is better if we go with multiple
-    #subsamples to register image (instead of entire image)
+    # FLANN is an optimized matcher (versus brute force), so should play with
+    # this as well. Maybe brute force is better if we go with multiple
+    # subsamples to register image (instead of entire image)
     flann = cv2.FlannBasedMatcher(index_params, search_params)
 
-    #The actual SIFT computations
+    # The actual SIFT computations
     kp1, des1 = sift.detectAndCompute(img1, None)
     kp2, des2 = sift.detectAndCompute(img2, None)
 
-    #The actual matching computation
-    matches = flann.knnMatch(des1, des2, k = 1)
-    #Need to flatten the match array
+    # The actual matching computation
+    matches = flann.knnMatch(des1, des2, k=1)
+    # Need to flatten the match array
     m2 = [matches[i][0] for i in range(len(matches))]
 
-    #Now pass the images with their sets of  SIFT keypoints and the map of
-    #matches and return the resulting image
-    return drawMatches(img1[:,:,0], kp1, img2[:,:,0], kp2, m2)
+    # Now pass the images with their sets of  SIFT keypoints and the map of
+    # matches and return the resulting image
+    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, m2)
 
 if __name__ == '__main__':
-    #Here's my sample image; could replace with a command line option
-    img = np.fromfile('/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw',
-            dtype=np.uint8)
-    img = img.reshape(2160,4096,3)[:,:,::-1]
-    im4 = feature_match(img[300:800,300:800,:], img, cv2.SURF())
+    # Here's my sample image; could replace with a command line option
+    fname = '/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw'
+    img = np.fromfile(fname, dtype=np.uint8)
+    img = img.reshape(2160, 4096, 3)[:, :, ::-1]
+    im4 = feature_match(img[300:800, 300:800, :], img, cv2.SURF())
     pl.imshow(im4)
-    #Assumes the Qt4Agg backend in place for matplotlib
+    # Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
-
