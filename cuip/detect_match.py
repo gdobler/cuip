@@ -73,7 +73,7 @@ def drawMatches(img1, kp1, img2, kp2, matches):
 
 def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
                   bfNorm=cv2.NORM_L2,
-                  flannIndexParams=dict(algorithm=0, # =cv2.FLANN_INDEX_KDTREE,
+                  flannIndexParams=dict(algorithm=0,  # =cv2.FLANN_INDEX_KDTREE
                                         trees=5),
                   flannSearchParams=dict(checks=20)
                   ):
@@ -97,12 +97,12 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
         raise ValueError(errmsg)
     elif matchAlgo == 'bf':
         # bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
+        # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
         matcher = cv2.BFMatcher(bfNorm)
     elif matchAlgo == 'flann':
         # FLANN is an optimized matcher (versus brute force), so should play
         # with this as well. Maybe brute force is better if we go with multiple
         # subsamples to register image (instead of entire image)
-        # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
         matcher = cv2.FlannBasedMatcher(flannIndexParams, flannSearchParams)
     else:
         print 'should not have gotten here!'
@@ -111,9 +111,11 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
     # The actual matching computation
     matches = matcher.match(des1, des2)
 
+    # Return the keypoints 
+    return (kp1, des1, kp2, des2, matches)
     # Now pass the images with their sets of keypoints and the map of
     # matches and return the resulting image
-    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, matches)
+    # return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, matches)
 
 
 if __name__ == '__main__':
@@ -124,8 +126,38 @@ if __name__ == '__main__':
     img = img.reshape(2160, 4096, 3)[:, :, ::-1]
     img2 = np.fromfile(fname2, dtype=np.uint8)
     img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
+    img2 = img[300:800, 300:800, :]
     # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
-    im4 = feature_match(img2, img, cv2.ORB())
+    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(), 'flann')  # , cv2.ORB())
+    im4 = drawMatches(img2[:,:,0], kp1, img[:,:,0], kp2, matches)
     pl.imshow(im4)
     # Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
+
+    xx = []
+    yy = []
+    dd = []
+    for mat in matches:
+
+        # Get the matching keypoints for each of the images
+        img1_idx = mat.queryIdx
+        img2_idx = mat.trainIdx
+        # x - columns
+        # y - rows
+        (x1, y1) = kp1[img1_idx].pt
+        (x2, y2) = kp2[img2_idx].pt
+
+        dx = x2-x1
+        dy = y2-y1
+        xx.append(dx)
+        yy.append(dy)
+        # Compute the distance between matching keypoints
+        d = (dx**2 + dy**2)**0.5
+        dd.append(d)
+
+    pl.hist(dd)
+    pl.show()
+
+    print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+    print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+    print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
