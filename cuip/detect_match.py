@@ -73,7 +73,7 @@ def drawMatches(img1, kp1, img2, kp2, matches):
 
 def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
                   bfNorm=cv2.NORM_L2,
-                  flannIndexParams=dict(algorithm=cv2.FLANN_INDEX_KDTREE,
+                  flannIndexParams=dict(algorithm=0, # =cv2.FLANN_INDEX_KDTREE,
                                         trees=5),
                   flannSearchParams=dict(checks=20)
                   ):
