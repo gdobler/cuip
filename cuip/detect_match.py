@@ -71,46 +71,61 @@ def drawMatches(img1, kp1, img2, kp2, matches):
     return out
 
 
-def feature_match(img1, img2, detectAlgo=cv2.SIFT()):
+def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
+                  bfNorm=cv2.NORM_L2,
+                  flannIndexParams=dict(algorithm=cv2.FLANN_INDEX_KDTREE,
+                                        trees=5),
+                  flannSearchParams=dict(checks=20)
+                  ):
     """
     Find features in images img1 and img2 using a detection algorithm (default
     is cv2.SIFT), then output a new image that shows matching features between
     the two images.
     """
 
-    # The paramters in these dictionaries can and probably should be
-    # played with
-    index_params = dict(algorithm=1, trees=5)
-    search_params = dict(checks=20)
+    support_detect = ['sift', 'surf', 'orb']
+    support_match = ['bf', 'flann']
 
-    # FLANN is an optimized matcher (versus brute force), so should play with
-    # this as well. Maybe brute force is better if we go with multiple
-    # subsamples to register image (instead of entire image)
-    flann = cv2.FlannBasedMatcher(index_params, search_params)
-    # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
-    bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
-
-    # The actual SIFT computations
+    # The actual feature detection computations
     kp1, des1 = detectAlgo.detectAndCompute(img1, None)
     kp2, des2 = detectAlgo.detectAndCompute(img2, None)
 
-    # The actual matching computation
-    # matches = flann.knnMatch(des1, des2, k=1)
-    matches = bf.knnMatch(des1, des2, k=1)
-    # Need to flatten the match array
-    m2 = [matches[i][0] for i in range(len(matches))]
+    if matchAlgo not in support_match:
+        errmsg = 'Matching algorithm {} not supported ' \
+                 '(must be one of {})'.format(
+                  matchAlgo, ', '.join(support_match))
+        raise ValueError(errmsg)
+    elif matchAlgo == 'bf':
+        # bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
+        matcher = cv2.BFMatcher(bfNorm)
+    elif matchAlgo == 'flann':
+        # FLANN is an optimized matcher (versus brute force), so should play
+        # with this as well. Maybe brute force is better if we go with multiple
+        # subsamples to register image (instead of entire image)
+        # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
+        matcher = cv2.FlannBasedMatcher(flannIndexParams, flannSearchParams)
+    else:
+        print 'should not have gotten here!'
+        raise Exception('wow')
 
-    # Now pass the images with their sets of  SIFT keypoints and the map of
+    # The actual matching computation
+    matches = matcher.match(des1, des2)
+
+    # Now pass the images with their sets of keypoints and the map of
     # matches and return the resulting image
-    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, m2)
+    return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, matches)
 
 
 if __name__ == '__main__':
     # Here's my sample image; could replace with a command line option
     fname = '/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw'
+    fname2 = '/home/cusp/cmp670/cuip2/temp__2016-03-16-114846-163394.raw'
     img = np.fromfile(fname, dtype=np.uint8)
     img = img.reshape(2160, 4096, 3)[:, :, ::-1]
-    im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
+    img2 = np.fromfile(fname2, dtype=np.uint8)
+    img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
+    # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
+    im4 = feature_match(img2, img, cv2.ORB())
     pl.imshow(im4)
     # Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
