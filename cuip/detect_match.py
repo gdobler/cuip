@@ -79,8 +79,8 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
                   ):
     """
     Find features in images img1 and img2 using a detection algorithm (default
-    is cv2.SIFT), then output a new image that shows matching features between
-    the two images.
+    is cv2.SIFT), then match them according to a brute force ('bf') or fast
+    approximation ('flann') method. Returns the features and the matches.
     """
 
     support_detect = ['sift', 'surf', 'orb']
@@ -111,11 +111,8 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
     # The actual matching computation
     matches = matcher.match(des1, des2)
 
-    # Return the keypoints 
+    # Return the keypoints and matches as a tuple
     return (kp1, des1, kp2, des2, matches)
-    # Now pass the images with their sets of keypoints and the map of
-    # matches and return the resulting image
-    # return drawMatches(img1[:, :, 0], kp1, img2[:, :, 0], kp2, matches)
 
 
 if __name__ == '__main__':
