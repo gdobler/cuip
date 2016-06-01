@@ -7,7 +7,7 @@ Date: 25 May 2016
 import cv2
 import numpy as np
 import pylab as pl
-
+import os
 
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
@@ -117,8 +117,8 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
 
 if __name__ == '__main__':
     # Here's my sample image; could replace with a command line option
-    fname = '/home/cusp/cmp670/cuip2/temp__2014-09-29-125314-29546.raw'
-    fname2 = '/home/cusp/cmp670/cuip2/temp__2016-03-16-114846-163394.raw'
+    fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
+    fname2 = os.getenv('cuipimg') + 'temp__2016-03-16-114846-163394.raw'
     img = np.fromfile(fname, dtype=np.uint8)
     img = img.reshape(2160, 4096, 3)[:, :, ::-1]
     img2 = np.fromfile(fname2, dtype=np.uint8)
