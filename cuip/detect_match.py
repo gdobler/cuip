@@ -115,6 +115,21 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
     return (kp1, des1, kp2, des2, matches)
 
 
+def img_cdf(img):
+    """
+    Calculate the CDF of an image using quicksort.
+    For this application we don't need the actual histograms.
+    """
+
+    x = np.sort(img, axis=None)
+    dims = img.shape[:2]
+    pixelcount = dims[0]*dims[1]
+    f = np.arange(pixelcount)/float(pixelcount)
+
+    # Return the cdf as a tuple of the sorted array and normalized index
+    return (x, f)
+
+
 if __name__ == '__main__':
     # Here's my sample image; could replace with a command line option
     fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
