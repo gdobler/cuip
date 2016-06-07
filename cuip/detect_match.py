@@ -130,6 +130,38 @@ def img_cdf(img):
     return (x, f)
 
 
+def neighborhood_cdf(img):
+    """
+    Calculate the CDF of an image with additional weighting for points in
+    each pixel's neighborhood--with any luck this allows for each pixel to
+    be ranked with (very few) ties.
+
+    Create a new matrix using the reference pixels as base and add up to a full
+    intensity level depending on the intensities of the surrounding pixels:
+
+         |x|
+       |x|x|x|
+     |x|x|O|x|x|
+       |x|x|x|
+         |x|
+
+    """
+    # TODO: break this out into its own routine with options for neighbor
+    # definitions and weighting
+
+    # Add 1/255th of the average of 12 nearby pixels to the original image
+    im12 = img[2:-2, 2:-2, :] + (
+            img[3:-1, 2:-2, :] + img[1:-3, 2:-2, :] +  # sides d=1
+            img[2:-2, 1:-3, :] + img[2:-2, 3:-1, :] +
+            img[3:-1, 3:-1, :] + img[3:-1, 1:-3, :] +  # corners d=1
+            img[1:-3, 3:-1, :] + img[1:-3, 1:-3, :] +
+            img[4:, 2:-2, :] + img[:-4, 2:-2, :] +     # sides d=2
+            img[2:-2, 4:, :] + img[2:-2, :-4, :]) / 12./255.
+    # no. of pixels / max 8-bit intensity
+
+    return img_cdf(im12[:,:,0])
+
+
 if __name__ == '__main__':
     # Here's my sample image; could replace with a command line option
     fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
