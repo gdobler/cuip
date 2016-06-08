@@ -9,6 +9,7 @@ import numpy as np
 import pylab as pl
 import os
 
+
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
         Adapted from Ray Phan's code at
@@ -97,7 +98,8 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
         raise ValueError(errmsg)
     elif matchAlgo == 'bf':
         # bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
-        # TODO: decide whether to allow norm to be chosen by user or make dependent on algorithm
+        # TODO: decide whether to allow norm to be chosen by user or make
+        # dependent on algorithm
         matcher = cv2.BFMatcher(bfNorm)
     elif matchAlgo == 'flann':
         # FLANN is an optimized matcher (versus brute force), so should play
@@ -130,7 +132,7 @@ def img_cdf(img):
     return (x, f)
 
 
-def neighborhood_cdf(img):
+def neighborhood_cdf(img, channel=0):
     """
     Calculate the CDF of an image with additional weighting for points in
     each pixel's neighborhood--with any luck this allows for each pixel to
@@ -139,11 +141,11 @@ def neighborhood_cdf(img):
     Create a new matrix using the reference pixels as base and add up to a full
     intensity level depending on the intensities of the surrounding pixels:
 
-         |x|
-       |x|x|x|
-     |x|x|O|x|x|
-       |x|x|x|
-         |x|
+         |2|
+       |c|1|c|
+     |2|1|*|1|2|
+       |c|1|c|
+         |2|
 
     """
     # TODO: break this out into its own routine with options for neighbor
@@ -159,7 +161,67 @@ def neighborhood_cdf(img):
             img[2:-2, 4:, :] + img[2:-2, :-4, :]) / 12./255.
     # no. of pixels / max 8-bit intensity
 
-    return img_cdf(im12[:,:,0])
+    return img_cdf(im12[:, :, channel])
+
+
+def get_intensity(cdf, intensities, vals):
+    """
+    Generator function to iteratively return intensities from one cdf given
+    another cdf ('vals')
+    """
+    idx = 0
+    val = vals[idx]
+    for c, i in zip(cdf, intensities):
+        if c >= val:
+            idx += 1
+            val = vals[idx]
+            yield i
+
+
+def hist_match(ref, img, channel=0):
+    """
+    Adjust the intensities of img to match the histogram of ref using their
+    cdf's.
+    """
+
+    ref_intensities, ref_cdf = dm.img_cdf(ref[:,:,0])
+    img_intensities, img_cdf = dm.neighborhood_cdf(img)
+
+    intensity_map = dict()
+    collapsed_cdf = dict()
+    collapsed_ref = dict()
+
+    last = -1
+    for c, i in zip(img_cdf, img_intensities):
+        # This works because the cdf is a monotonically increasing function
+        if i != last:
+            collapsed_cdf[c] = i
+            last = i
+
+    last = ref_intensities[0]
+    for c, i in zip(ref_cdf, ref_intensities):
+        # This works because the cdf is a monotonically increasing function
+        if i != last:
+            collapsed_ref[c] = i-1
+            last = i
+    collapsed_ref[1.0]=255
+    #print sorted(collapsed_ref.values())
+
+    idx = 0
+    vals = sorted(collapsed_ref.keys())
+    #vals.append(1.0)
+    val = vals[idx]
+    print len(collapsed_cdf)
+    for c, i in sorted(collapsed_cdf.iteritems()):
+        if c <= val:
+            intensity_map[i]=collapsed_ref[val]
+        else:
+            idx += 1
+            val = vals[idx]
+            intensity_map[i]=collapsed_ref[val]
+            print idx, c, i, val, collapsed_ref[val], len(intensity_map)
+
+    return intensity_map
 
 
 if __name__ == '__main__':
