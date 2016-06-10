@@ -124,12 +124,26 @@ def img_cdf(img):
     """
 
     x = np.sort(img, axis=None)
-    dims = img.shape[:2]
-    pixelcount = dims[0]*dims[1]
-    f = np.arange(pixelcount)/float(pixelcount)
-
+    c, f = np.unique(x, return_index=True)
+    #f = f / float(f.max())
+    f = f / float(len(x))
     # Return the cdf as a tuple of the sorted array and normalized index
-    return (x, f)
+
+    return (c, f)
+
+#def img_cdf_old(img):
+#    """
+#    Calculate the CDF of an image using quicksort.
+#    For this application we don't need the actual histograms.
+#    """
+#
+#    x = np.sort(img, axis=None)
+#    dims = img.shape[:2]
+#    pixelcount = dims[0]*dims[1]
+#    f = np.arange(pixelcount)/float(pixelcount)
+#
+#    # Return the cdf as a tuple of the sorted array and normalized index
+#    return (x, f)
 
 
 def neighborhood_cdf(img, channel=0):
@@ -138,8 +152,8 @@ def neighborhood_cdf(img, channel=0):
     each pixel's neighborhood--with any luck this allows for each pixel to
     be ranked with (very few) ties.
 
-    Create a new matrix using the reference pixels as base and add up to a full
-    intensity level depending on the intensities of the surrounding pixels:
+    Create a new matrix using the reference pixels as base and add a fraction
+    of intensity level depending on the intensities of the surrounding pixels:
 
          |2|
        |c|1|c|
@@ -151,17 +165,22 @@ def neighborhood_cdf(img, channel=0):
     # TODO: break this out into its own routine with options for neighbor
     # definitions and weighting
 
-    # Add 1/255th of the average of 12 nearby pixels to the original image
-    im12 = img[2:-2, 2:-2, :] + (
-            img[3:-1, 2:-2, :] + img[1:-3, 2:-2, :] +  # sides d=1
-            img[2:-2, 1:-3, :] + img[2:-2, 3:-1, :] +
-            img[3:-1, 3:-1, :] + img[3:-1, 1:-3, :] +  # corners d=1
-            img[1:-3, 3:-1, :] + img[1:-3, 1:-3, :] +
-            img[4:, 2:-2, :] + img[:-4, 2:-2, :] +     # sides d=2
-            img[2:-2, 4:, :] + img[2:-2, :-4, :]) / 12./255.
-    # no. of pixels / max 8-bit intensity
+    # convert the image to uint16 so we can do some fast addition on it
+    img = np.uint16(img[:,:,channel])
+    # Add 1/256th of the average of 12 nearby pixels to the original image
+    weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
+                img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
+                img[3:-1, 3:-1, ...] + img[3:-1, 1:-3, ...] +  # corners d=1
+                img[1:-3, 3:-1, ...] + img[1:-3, 1:-3, ...] +
+                img[4:, 2:-2, ...] + img[:-4, 2:-2, ...] +     # sides d=2
+                img[2:-2, 4:, ...] + img[2:-2, :-4, ...]) / (16. * 256.)
+    # no. of pixels (actually 16, faster division?) / max 8-bit intensity
+    # implicit cast to float
 
-    return img_cdf(im12[:, :, channel])
+    # add to the original image
+    im12 = img[2:-2, 2:-2, ...] + weights
+
+    return img_cdf(im12[:, :, ...])
 
 
 def get_intensity(cdf, intensities, vals):
@@ -178,14 +197,58 @@ def get_intensity(cdf, intensities, vals):
             yield i
 
 
+#def hist_match_old(ref, img, channel=0):
+#    """
+#    Adjust the intensities of img to match the histogram of ref using their
+#    cdf's.
+#    """
+#
+#    ref_intensities, ref_cdf = img_cdf(ref[:,:,0])
+#    img_intensities, img_cdf = neighborhood_cdf(img)
+#
+#    intensity_map = dict()
+#    collapsed_cdf = dict()
+#    collapsed_ref = dict()
+#
+#    last = -1
+#    for c, i in zip(img_cdf, img_intensities):
+#        # This works because the cdf is a monotonically increasing function
+#        if i != last:
+#            collapsed_cdf[c] = i
+#            last = i
+#
+#    last = ref_intensities[0]
+#    for c, i in zip(ref_cdf, ref_intensities):
+#        # This works because the cdf is a monotonically increasing function
+#        if i != last:
+#            collapsed_ref[c] = i-1
+#            last = i
+#    collapsed_ref[1.0]=255
+#    #print sorted(collapsed_ref.values())
+#
+#    idx = 0
+#    vals = sorted(collapsed_ref.keys())
+#    #vals.append(1.0)
+#    val = vals[idx]
+#    print len(collapsed_cdf)
+#    for c, i in sorted(collapsed_cdf.iteritems()):
+#        if c <= val:
+#            intensity_map[i]=collapsed_ref[val]
+#        else:
+#            idx += 1
+#            val = vals[idx]
+#            intensity_map[i]=collapsed_ref[val]
+#            print idx, c, i, val, collapsed_ref[val], len(intensity_map)
+
+
 def hist_match(ref, img, channel=0):
     """
     Adjust the intensities of img to match the histogram of ref using their
     cdf's.
     """
 
-    ref_intensities, ref_cdf = dm.img_cdf(ref[:,:,0])
-    img_intensities, img_cdf = dm.neighborhood_cdf(img)
+    ref_intensities, ref_cdf = img_cdf(ref[:,:,0])
+    img_intensities, img_cdf = neighborhood_cdf(img)
 
     intensity_map = dict()
     collapsed_cdf = dict()
