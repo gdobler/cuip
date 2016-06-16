@@ -66,8 +66,9 @@ def drawMatches(img1, kp1, img2, kp2, matches):
         # Draw a line in between the two points
         # thickness = 1
         # colour blue
+        clr = tuple(np.random.randint(0,255,3))
         cv2.line(out, (int(x1), int(y1)),
-                 (int(x2)+cols1, int(y2)), (255, 0, 0), 1)
+                 (int(x2)+cols1, int(y2)), clr, 1)
     # Show the image
     return out
 
@@ -275,15 +276,21 @@ def hist_match(ref, img, channel=0):
 
 if __name__ == '__main__':
     # Here's my sample image; could replace with a command line option
-    fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
-    fname2 = os.getenv('cuipimg') + 'temp__2016-03-16-114846-163394.raw'
+#    fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
+#    fname2 = os.getenv('cuipimg') + 'temp__2016-03-16-114846-163394.raw'
+    fname = "/projects/cusp/10101/0/2013/11/02/23.31.09/" + \
+        "oct08_2013-10-25-175504-71097.raw"
+    fname2 = "/projects/cusp/10101/0/2014/10/02/23.33.05/" + \
+        "temp__2014-09-29-125314-29726.raw"
     img = np.fromfile(fname, dtype=np.uint8)
     img = img.reshape(2160, 4096, 3)[:, :, ::-1]
+#    img = img[300:800, 300:800, :]
     img2 = np.fromfile(fname2, dtype=np.uint8)
     img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
-    img2 = img[300:800, 300:800, :]
+#    img2 = img2[300:800, 300:800, :]
     # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
-    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(), 'flann')  # , cv2.ORB())
+    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(), 
+                                                  'flann')  # , cv2.ORB())
     im4 = drawMatches(img2[:,:,0], kp1, img[:,:,0], kp2, matches)
     pl.imshow(im4)
     # Assumes the Qt4Agg backend in place for matplotlib
@@ -310,9 +317,22 @@ if __name__ == '__main__':
         d = (dx**2 + dy**2)**0.5
         dd.append(d)
 
-    pl.hist(dd)
-    pl.show()
+#    pl.hist(dd)
+#    pl.show()
 
     print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
     print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
     print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+
+    xx = np.array(xx)
+    yy = np.array(yy)
+    dd = np.array(dd)
+    xxint = xx.astype(int)
+    yyint = yy.astype(int)
+
+    print("x_peak = {0}".format(np.bincount(xxint-xxint.min()).argmax() + 
+                                xxint.min()))
+
+    print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() + 
+                                yyint.min()))
+
