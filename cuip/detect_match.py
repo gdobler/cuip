@@ -125,25 +125,10 @@ def img_cdf(img):
 
     x = np.sort(img, axis=None)
     c, f = np.unique(x, return_index=True)
-    #f = f / float(f.max())
     f = f / float(len(x))
     # Return the cdf as a tuple of the sorted array and normalized index
 
     return (c, f)
-
-#def img_cdf_old(img):
-#    """
-#    Calculate the CDF of an image using quicksort.
-#    For this application we don't need the actual histograms.
-#    """
-#
-#    x = np.sort(img, axis=None)
-#    dims = img.shape[:2]
-#    pixelcount = dims[0]*dims[1]
-#    f = np.arange(pixelcount)/float(pixelcount)
-#
-#    # Return the cdf as a tuple of the sorted array and normalized index
-#    return (x, f)
 
 
 def neighborhood_cdf(img, channel=0):
@@ -247,15 +232,16 @@ def hist_match(ref, img, channel=0):
     cdf's.
     """
 
+    # ref_intensities and ref_cdf are the quantized intensities
     ref_intensities, ref_cdf = img_cdf(ref[:,:,0])
-    img_intensities, img_cdf = neighborhood_cdf(img)
+    im_intensities, im_cdf = neighborhood_cdf(img)
 
     intensity_map = dict()
     collapsed_cdf = dict()
     collapsed_ref = dict()
 
     last = -1
-    for c, i in zip(img_cdf, img_intensities):
+    for c, i in zip(im_cdf, im_intensities):
         # This works because the cdf is a monotonically increasing function
         if i != last:
             collapsed_cdf[c] = i
