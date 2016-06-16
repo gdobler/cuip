@@ -118,6 +118,10 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
     return (kp1, des1, kp2, des2, matches)
 
 
+def gray(img):
+    return np.sum(img, axis=-1)/3
+
+
 def img_cdf(img):
     """
     Calculate the CDF of an image using quicksort.
@@ -152,7 +156,10 @@ def neighborhood_cdf(img, channel=0):
     # definitions and weighting
 
     # convert the image to uint16 so we can do some fast addition on it
-    img = np.uint16(img[:,:,channel])
+    if channel:
+        img = np.uint16(img[:,:,channel])
+    else:
+        img = np.uint16(img)
     # Add 1/256th of the average of 12 nearby pixels to the original image
     weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
                 img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
@@ -289,7 +296,7 @@ if __name__ == '__main__':
     img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
 #    img2 = img2[300:800, 300:800, :]
     # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
-    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(), 
+    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(),
                                                   'flann')  # , cv2.ORB())
     im4 = drawMatches(img2[:,:,0], kp1, img[:,:,0], kp2, matches)
     pl.imshow(im4)
@@ -330,9 +337,9 @@ if __name__ == '__main__':
     xxint = xx.astype(int)
     yyint = yy.astype(int)
 
-    print("x_peak = {0}".format(np.bincount(xxint-xxint.min()).argmax() + 
+    print("x_peak = {0}".format(np.bincount(xxint-xxint.min()).argmax() +
                                 xxint.min()))
 
-    print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() + 
+    print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() +
                                 yyint.min()))
 
