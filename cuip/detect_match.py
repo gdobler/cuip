@@ -66,7 +66,7 @@ def drawMatches(img1, kp1, img2, kp2, matches):
         # Draw a line in between the two points
         # thickness = 1
         # colour blue
-        clr = tuple(np.random.randint(0,255,3))
+        clr = tuple(np.random.randint(0, 255, 3))
         cv2.line(out, (int(x1), int(y1)),
                  (int(x2)+cols1, int(y2)), clr, 1)
     # Show the image
@@ -119,6 +119,7 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
 
 
 def gray(img):
+    # Convert to grayscale as the average of three color channels
     return np.sum(img, axis=-1)/3
 
 
@@ -131,12 +132,12 @@ def img_cdf(img):
     x = np.sort(img, axis=None)
     c, f = np.unique(x, return_index=True)
     f = f / float(len(x))
-    # Return the cdf as a tuple of the sorted array and normalized index
 
+    # Return the cdf as a tuple of the sorted array and normalized index
     return (c, f)
 
 
-def neighborhood_cdf(img, channel=0):
+def neighborhood_cdf(img, channel=None):
     """
     Calculate the CDF of an image with additional weighting for points in
     each pixel's neighborhood--with any luck this allows for each pixel to
@@ -156,10 +157,12 @@ def neighborhood_cdf(img, channel=0):
     # definitions and weighting
 
     # convert the image to uint16 so we can do some fast addition on it
+    # if a color channel is not provided convert to grayscale first
     if channel:
-        img = np.uint16(img[:,:,channel])
+        img = np.uint16(img[:, :, channel])
     else:
-        img = np.uint16(img)
+        img = np.uint16(gray(img))
+
     # Add 1/256th of the average of 12 nearby pixels to the original image
     weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
                 img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
@@ -241,7 +244,7 @@ def hist_match(ref, img, channel=0):
     """
 
     # ref_intensities and ref_cdf are the quantized intensities
-    ref_intensities, ref_cdf = img_cdf(ref[:,:,0])
+    ref_intensities, ref_cdf = img_cdf(ref[:, :, 0])
     im_intensities, im_cdf = neighborhood_cdf(img)
 
     intensity_map = dict()
@@ -261,7 +264,7 @@ def hist_match(ref, img, channel=0):
         if i != last:
             collapsed_ref[c] = i-1
             last = i
-    collapsed_ref[1.0]=255
+    collapsed_ref[1.0] = 255
     #print sorted(collapsed_ref.values())
 
     idx = 0
@@ -271,11 +274,11 @@ def hist_match(ref, img, channel=0):
     print len(collapsed_cdf)
     for c, i in sorted(collapsed_cdf.iteritems()):
         if c <= val:
-            intensity_map[i]=collapsed_ref[val]
+            intensity_map[i] = collapsed_ref[val]
         else:
             idx += 1
             val = vals[idx]
-            intensity_map[i]=collapsed_ref[val]
+            intensity_map[i] = collapsed_ref[val]
             print idx, c, i, val, collapsed_ref[val], len(intensity_map)
 
     return intensity_map
@@ -298,7 +301,7 @@ if __name__ == '__main__':
     # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
     kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(),
                                                   'flann')  # , cv2.ORB())
-    im4 = drawMatches(img2[:,:,0], kp1, img[:,:,0], kp2, matches)
+    im4 = drawMatches(img2[:, :, 0], kp1, img[:, :, 0], kp2, matches)
     pl.imshow(im4)
     # Assumes the Qt4Agg backend in place for matplotlib
     pl.show()
@@ -342,4 +345,3 @@ if __name__ == '__main__':
 
     print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() +
                                 yyint.min()))
-
