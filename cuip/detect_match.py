@@ -9,7 +9,6 @@ import numpy as np
 import pylab as pl
 import os
 
-
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
         Adapted from Ray Phan's code at
@@ -120,7 +119,15 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
 
 def gray(img):
     # Convert to grayscale as the average of three color channels
-    return np.sum(img, axis=-1)/3
+
+    # Pre allocating the memory helps improve by ~200 ms
+    im_out = np.empty(img.shape[:2], dtype=np.uint16)
+
+    # Similarly a float multiply is cheaper than a float divide
+    onethird = 1./3.
+
+    # For grayscale, we want to return integers (or do we?)
+    return np.int8(np.sum(img, axis=-1, out=im_out)*onethird)
 
 
 def img_cdf(img):
@@ -131,7 +138,9 @@ def img_cdf(img):
 
     x = np.sort(img, axis=None)
     c, f = np.unique(x, return_index=True)
-    f = f / float(len(x))
+    mylen = 1./float(len(x))
+    # f = f / float(len(x))
+    f = f * mylen
 
     # Return the cdf as a tuple of the sorted array and normalized index
     return (c, f)
@@ -176,7 +185,7 @@ def neighborhood_cdf(img, channel=None):
     # add to the original image
     im12 = img[2:-2, 2:-2, ...] + weights
 
-    return img_cdf(im12[:, :, ...])
+    return img_cdf(im12[:, :, ...]), im12
 
 
 def get_intensity(cdf, intensities, vals):
@@ -193,50 +202,6 @@ def get_intensity(cdf, intensities, vals):
             yield i
 
 
-#def hist_match_old(ref, img, channel=0):
-#    """
-#    Adjust the intensities of img to match the histogram of ref using their
-#    cdf's.
-#    """
-#
-#    ref_intensities, ref_cdf = img_cdf(ref[:,:,0])
-#    img_intensities, img_cdf = neighborhood_cdf(img)
-#
-#    intensity_map = dict()
-#    collapsed_cdf = dict()
-#    collapsed_ref = dict()
-#
-#    last = -1
-#    for c, i in zip(img_cdf, img_intensities):
-#        # This works because the cdf is a monotonically increasing function
-#        if i != last:
-#            collapsed_cdf[c] = i
-#            last = i
-#
-#    last = ref_intensities[0]
-#    for c, i in zip(ref_cdf, ref_intensities):
-#        # This works because the cdf is a monotonically increasing function
-#        if i != last:
-#            collapsed_ref[c] = i-1
-#            last = i
-#    collapsed_ref[1.0]=255
-#    #print sorted(collapsed_ref.values())
-#
-#    idx = 0
-#    vals = sorted(collapsed_ref.keys())
-#    #vals.append(1.0)
-#    val = vals[idx]
-#    print len(collapsed_cdf)
-#    for c, i in sorted(collapsed_cdf.iteritems()):
-#        if c <= val:
-#            intensity_map[i]=collapsed_ref[val]
-#        else:
-#            idx += 1
-#            val = vals[idx]
-#            intensity_map[i]=collapsed_ref[val]
-#            print idx, c, i, val, collapsed_ref[val], len(intensity_map)
-
-
 def hist_match(ref, img, channel=0):
     """
     Adjust the intensities of img to match the histogram of ref using their
@@ -245,7 +210,7 @@ def hist_match(ref, img, channel=0):
 
     # ref_intensities and ref_cdf are the quantized intensities
     ref_intensities, ref_cdf = img_cdf(ref[:, :, 0])
-    im_intensities, im_cdf = neighborhood_cdf(img)
+    (im_intensities, im_cdf), im12 = neighborhood_cdf(img)
 
     intensity_map = dict()
     collapsed_cdf = dict()
