@@ -8,6 +8,7 @@ import cv2
 import numpy as np
 import pylab as pl
 import os
+from scipy.ndimage.filters import convolve
 
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
@@ -127,7 +128,7 @@ def gray(img):
     onethird = 1./3.
 
     # For grayscale, we want to return integers (or do we?)
-    return np.int8(np.sum(img, axis=-1, out=im_out)*onethird)
+    return np.int16(np.sum(img, axis=-1, out=im_out)*onethird)
 
 
 def img_cdf(img):
@@ -136,6 +137,7 @@ def img_cdf(img):
     For this application we don't need the actual histograms.
     """
 
+    x = np.empty(img.shape[0]*img.shape[1], dtype=np.float_)
     x = np.sort(img, axis=None)
     c, f = np.unique(x, return_index=True)
     mylen = 1./float(len(x))
@@ -146,7 +148,8 @@ def img_cdf(img):
     return (c, f)
 
 
-def neighborhood_cdf(img, channel=None):
+def NEWneighborhood_cdf(img, channel=None):
+    ##return np.sum(img, axis=-1)/3
     """
     Calculate the CDF of an image with additional weighting for points in
     each pixel's neighborhood--with any luck this allows for each pixel to
@@ -170,7 +173,55 @@ def neighborhood_cdf(img, channel=None):
     if channel:
         img = np.uint16(img[:, :, channel])
     else:
-        img = np.uint16(gray(img))
+        #img = np.uint16(gray(img))
+        pass
+
+    kernel = np.array([
+        [0,0,1,0,0],
+        [0,1,1,1,0],
+        [1,1,1,1,1],
+        [0,1,1,1,0],
+        [0,0,1,0,0]])
+
+    weights = np.empty(img.shape, dtype=np.float_)
+    # Add 1/256th of the average of 12 nearby pixels to the original image
+    convolve(img, kernel, output = weights)
+    inversescale = 1/(16.*256.)
+    weights *= inversescale
+
+    # add to the original image
+    weights += img
+
+    return img_cdf(weights[:, :, ...]), weights
+
+
+def neighborhood_cdf(img, channel=None):
+    ##return np.sum(img, axis=-1)/3
+    """
+    Calculate the CDF of an image with additional weighting for points in
+    each pixel's neighborhood--with any luck this allows for each pixel to
+    be ranked with (very few) ties.
+
+    Create a new matrix using the reference pixels as base and add a fraction
+    of intensity level depending on the intensities of the surrounding pixels:
+
+         |2|
+       |c|1|c|
+     |2|1|*|1|2|
+       |c|1|c|
+         |2|
+
+    """
+    # TODO: break this out into its own routine with options for neighbor
+    # definitions and weighting
+
+    # convert the image to uint16 so we can do some fast addition on it
+    # if a color channel is not provided convert to grayscale first
+    if channel:
+        img = np.uint16(img[:, :, channel])
+    else:
+        #img = np.uint16(gray(img))
+        pass
 
     # Add 1/256th of the average of 12 nearby pixels to the original image
     weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
@@ -202,15 +253,19 @@ def get_intensity(cdf, intensities, vals):
             yield i
 
 
-def hist_match(ref, img, channel=0):
+def hist_match(ref, img, gr=True, channel=0):
     """
     Adjust the intensities of img to match the histogram of ref using their
     cdf's.
     """
 
     # ref_intensities and ref_cdf are the quantized intensities
-    ref_intensities, ref_cdf = img_cdf(ref[:, :, 0])
-    (im_intensities, im_cdf), im12 = neighborhood_cdf(img)
+    if gr:
+        ref_intensities, ref_cdf = img_cdf(gray(ref))
+        (im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
+    else:
+        ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
+        (im_intensities, im_cdf), im12 = neighborhood_cdf(img[:,:,channel])
 
     intensity_map = dict()
     collapsed_cdf = dict()
@@ -236,7 +291,7 @@ def hist_match(ref, img, channel=0):
     vals = sorted(collapsed_ref.keys())
     #vals.append(1.0)
     val = vals[idx]
-    print len(collapsed_cdf)
+    #print len(collapsed_cdf)
     for c, i in sorted(collapsed_cdf.iteritems()):
         if c <= val:
             intensity_map[i] = collapsed_ref[val]
@@ -244,7 +299,7 @@ def hist_match(ref, img, channel=0):
             idx += 1
             val = vals[idx]
             intensity_map[i] = collapsed_ref[val]
-            print idx, c, i, val, collapsed_ref[val], len(intensity_map)
+            #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
 
     return intensity_map
 
