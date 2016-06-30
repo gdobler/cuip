@@ -128,7 +128,13 @@ def gray(img):
     onethird = 1./3.
 
     # For grayscale, we want to return integers (or do we?)
-    return np.int16(np.sum(img, axis=-1, out=im_out)*onethird)
+    return np.uint8(np.sum(img, axis=-1, out=im_out)*onethird)
+
+
+def gray3(img):
+    '''Return a BRG array ([x,y,3]) representation of a grayscale array'''
+    g = gray(img)
+    return np.dstack((g, g, g))
 
 
 def img_cdf(img):
@@ -301,7 +307,8 @@ def hist_match(ref, img, gr=True, channel=0):
             intensity_map[i] = collapsed_ref[val]
             #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
 
-    adjusted_img = np.array([map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))])
+    adjusted_img = np.uint8(np.array(
+        [map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))]))
     #return intensity_map
     return adjusted_img
 
