@@ -118,6 +118,19 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
     return (kp1, des1, kp2, des2, matches)
 
 
+def gray_to_3(img):
+    '''Return a BRG array ([x,y,3]) representation of a grayscale array'''
+    if len(img.shape) > 2:
+        errmsg = 'input image is already multichannel'
+        raise ValueError(errmsg)
+    elif len(img.shape) < 2:
+        errmsg = 'input image is not 2-dimensional'
+        raise ValueError(errmsg)
+    else:
+        #Stack the grayscale matrix in each of three channels
+        return np.dstack((img, img, img))
+
+
 def gray(img):
     # Convert to grayscale as the average of three color channels
 
@@ -132,9 +145,9 @@ def gray(img):
 
 
 def gray3(img):
-    '''Return a BRG array ([x,y,3]) representation of a grayscale array'''
+    # Convenience function
     g = gray(img)
-    return np.dstack((g, g, g))
+    return gray_to_3(g)
 
 
 def img_cdf(img):
@@ -313,12 +326,12 @@ def hist_match(ref, img, gr=True, channel=0):
     return adjusted_img
 
 
-def calculate_img_offset(img1, img2):
+def calculate_img_offset(img1, img2, **matchops):
     '''
     '''
 
-    kp1, des1, kp2, des2, matches = feature_match(img1, img2, cv2.SIFT(),
-                                                  'flann')  # , cv2.ORB())
+    kp1, des1, kp2, des2, matches = feature_match(img1, img2, **matchops)
+            #cv2.SIFT(), 'flann')  # , cv2.ORB())
     xx = []
     yy = []
     dd = []
