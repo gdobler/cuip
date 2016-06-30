@@ -43,9 +43,9 @@ def drawMatches(img1, kp1, img2, kp2, matches):
     cols2 = img2.shape[1]
     out = np.zeros((max([rows1, rows2]), cols1+cols2, 3), dtype='uint8')
     # Place the first image to the left
-    out[:rows1, :cols1, :] = np.dstack([img1, img1, img1])
+    out[:rows1, :cols1, :] = img1 #np.dstack([img1, img1, img1])
     # Place the next image to the right of it
-    out[:rows2, cols1:cols1+cols2, :] = np.dstack([img2, img2, img2])
+    out[:rows2, cols1:cols1+cols2, :] = img2 #np.dstack([img2, img2, img2])
     # For each pair of points we have between both images
     # draw circles, then connect a line between them
     for mat in matches:
@@ -148,8 +148,7 @@ def img_cdf(img):
     return (c, f)
 
 
-def NEWneighborhood_cdf(img, channel=None):
-    ##return np.sum(img, axis=-1)/3
+def neighborhood_cdf(img, channel=None):
     """
     Calculate the CDF of an image with additional weighting for points in
     each pixel's neighborhood--with any luck this allows for each pixel to
@@ -192,51 +191,52 @@ def NEWneighborhood_cdf(img, channel=None):
     # add to the original image
     weights += img
 
-    return img_cdf(weights[:, :, ...]), weights
+    # return img_cdf(weights[:, :, ...]), weights
+    return img_cdf(weights), weights
 
 
-def neighborhood_cdf(img, channel=None):
-    ##return np.sum(img, axis=-1)/3
-    """
-    Calculate the CDF of an image with additional weighting for points in
-    each pixel's neighborhood--with any luck this allows for each pixel to
-    be ranked with (very few) ties.
-
-    Create a new matrix using the reference pixels as base and add a fraction
-    of intensity level depending on the intensities of the surrounding pixels:
-
-         |2|
-       |c|1|c|
-     |2|1|*|1|2|
-       |c|1|c|
-         |2|
-
-    """
-    # TODO: break this out into its own routine with options for neighbor
-    # definitions and weighting
-
-    # convert the image to uint16 so we can do some fast addition on it
-    # if a color channel is not provided convert to grayscale first
-    if channel:
-        img = np.uint16(img[:, :, channel])
-    else:
-        #img = np.uint16(gray(img))
-        pass
-
-    # Add 1/256th of the average of 12 nearby pixels to the original image
-    weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
-                img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
-                img[3:-1, 3:-1, ...] + img[3:-1, 1:-3, ...] +  # corners d=1
-                img[1:-3, 3:-1, ...] + img[1:-3, 1:-3, ...] +
-                img[4:, 2:-2, ...] + img[:-4, 2:-2, ...] +     # sides d=2
-                img[2:-2, 4:, ...] + img[2:-2, :-4, ...]) / (16. * 256.)
-    # no. of pixels (actually 16, faster division?) / max 8-bit intensity
-    # implicit cast to float
-
-    # add to the original image
-    im12 = img[2:-2, 2:-2, ...] + weights
-
-    return img_cdf(im12[:, :, ...]), im12
+# def OLDneighborhood_cdf(img, channel=None):
+#     ##return np.sum(img, axis=-1)/3
+#     """
+#     Calculate the CDF of an image with additional weighting for points in
+#     each pixel's neighborhood--with any luck this allows for each pixel to
+#     be ranked with (very few) ties.
+# 
+#     Create a new matrix using the reference pixels as base and add a fraction
+#     of intensity level depending on the intensities of the surrounding pixels:
+# 
+#          |2|
+#        |c|1|c|
+#      |2|1|*|1|2|
+#        |c|1|c|
+#          |2|
+# 
+#     """
+#     # TODO: break this out into its own routine with options for neighbor
+#     # definitions and weighting
+# 
+#     # convert the image to uint16 so we can do some fast addition on it
+#     # if a color channel is not provided convert to grayscale first
+#     if channel:
+#         img = np.uint16(img[:, :, channel])
+#     else:
+#         #img = np.uint16(gray(img))
+#         pass
+# 
+#     # Add 1/256th of the average of 12 nearby pixels to the original image
+#     weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
+#                 img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
+#                 img[3:-1, 3:-1, ...] + img[3:-1, 1:-3, ...] +  # corners d=1
+#                 img[1:-3, 3:-1, ...] + img[1:-3, 1:-3, ...] +
+#                 img[4:, 2:-2, ...] + img[:-4, 2:-2, ...] +     # sides d=2
+#                 img[2:-2, 4:, ...] + img[2:-2, :-4, ...]) / (16. * 256.)
+#     # no. of pixels (actually 16, faster division?) / max 8-bit intensity
+#     # implicit cast to float
+# 
+#     # add to the original image
+#     im12 = img[2:-2, 2:-2, ...] + weights
+# 
+#     return img_cdf(im12[:, :, ...]), im12
 
 
 def get_intensity(cdf, intensities, vals):
@@ -301,7 +301,68 @@ def hist_match(ref, img, gr=True, channel=0):
             intensity_map[i] = collapsed_ref[val]
             #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
 
-    return intensity_map
+    adjusted_img = np.array([map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))])
+    #return intensity_map
+    return adjusted_img
+
+
+def calculate_img_offset(img1, img2):
+    '''
+    '''
+
+    kp1, des1, kp2, des2, matches = feature_match(img1, img2, cv2.SIFT(),
+                                                  'flann')  # , cv2.ORB())
+    xx = []
+    yy = []
+    dd = []
+    tt = []
+    for mat in matches:
+
+        # Get the matching keypoints for each of the images
+        img1_idx = mat.queryIdx
+        img2_idx = mat.trainIdx
+        # x - columns
+        # y - rows
+        (x1, y1) = kp1[img1_idx].pt
+        (x2, y2) = kp2[img2_idx].pt
+        t1 = kp1[img1_idx].angle
+        t2 = kp2[img2_idx].angle
+
+        dx = x2-x1
+        dy = y2-y1
+        dt = t2-t1
+        xx.append(dx)
+        yy.append(dy)
+        tt.append(dt)
+        # Compute the distance between matching keypoints
+        d = (dx**2 + dy**2)**0.5
+        dd.append(d)
+
+#    pl.hist(dd)
+#    pl.show()
+
+    print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+    print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+    print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+    print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
+
+    xx = np.array(xx)
+    yy = np.array(yy)
+    dd = np.array(dd)
+    tt = np.array(tt)
+    xxint = xx.astype(int)
+    yyint = yy.astype(int)
+    ttint = tt.astype(int)
+
+    xoffset = (np.bincount(xxint-xxint.min()).argmax() + xxint.min())
+    yoffset = (np.bincount(yyint-yyint.min()).argmax() + yyint.min())
+    toffset = (np.bincount(ttint-ttint.min()).argmax() + ttint.min())
+
+    print "x_peak = {0}".format(xoffset)
+    print "y_peak = {0}".format(yoffset)
+    print "t_peak = {0}".format(toffset)
+
+    return xoffset, yoffset, toffset, xx, yy, dd, tt
 
 
 if __name__ == '__main__':
