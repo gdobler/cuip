@@ -152,19 +152,35 @@ def gray3(img):
 
 def img_cdf(img):
     """
-    Calculate the CDF of an image using quicksort.
-    For this application we don't need the actual histograms.
+    Calculate the CDF of an image using quicksort. Optional returns from
+    np.unique provide the histogram counts and indices for reconstruction of
+    the image. The CDF is returned from the normalized cumulative sum of the
+    counts.
     """
 
-    x = np.empty(img.shape[0]*img.shape[1], dtype=np.float_)
-    x = np.sort(img, axis=None)
-    c, f = np.unique(x, return_index=True)
-    mylen = 1./float(len(x))
-    # f = f / float(len(x))
-    f = f * mylen
+    c, i, f = np.unique(img, return_counts=True, return_inverse=True)
+    f = np.cumsum(f).astype(np.float_)
+    f /= f[-1]
 
     # Return the cdf as a tuple of the sorted array and normalized index
-    return (c, f)
+    return (c, f, i)
+
+
+# def OLDimg_cdf(img):
+#     """
+#     Calculate the CDF of an image using quicksort.
+#     For this application we don't need the actual histograms.
+#     """
+# 
+#     x = np.empty(img.shape[0]*img.shape[1], dtype=np.float_)
+#     x = np.sort(img, axis=None)
+#     c, f = np.unique(x, return_index=True)
+#     mylen = 1./float(len(x))
+#     # f = f / float(len(x))
+#     f = f * mylen
+# 
+#     # Return the cdf as a tuple of the sorted array and normalized index
+#     return (c, f)
 
 
 def neighborhood_cdf(img, channel=None):
@@ -280,50 +296,74 @@ def hist_match(ref, img, gr=True, channel=0):
 
     # ref_intensities and ref_cdf are the quantized intensities
     if gr:
-        ref_intensities, ref_cdf = img_cdf(gray(ref))
-        (im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
+        ref_intensities, ref_cdf, ind = img_cdf(gray(ref))
+        #(im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
+        (im_intensities, im_cdf,  indices), im12 = neighborhood_cdf(gray(img))
     else:
-        ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
-        (im_intensities, im_cdf), im12 = neighborhood_cdf(img[:,:,channel])
+        ref_intensities, ref_cdf, ind = img_cdf(ref[:, :, channel])
+        (im_intensities, im_cdf, indices), im12 = neighborhood_cdf(img[:,:,channel])
 
-    intensity_map = dict()
-    collapsed_cdf = dict()
-    collapsed_ref = dict()
+    g = np.interp(im_cdf, ref_cdf, ref_intensities)
 
-    last = -1
-    for c, i in zip(im_cdf, im_intensities):
-        # This works because the cdf is a monotonically increasing function
-        if i != last:
-            collapsed_cdf[c] = i
-            last = i
-
-    last = ref_intensities[0]
-    for c, i in zip(ref_cdf, ref_intensities):
-        # This works because the cdf is a monotonically increasing function
-        if i != last:
-            collapsed_ref[c] = i-1
-            last = i
-    collapsed_ref[1.0] = 255
-    #print sorted(collapsed_ref.values())
-
-    idx = 0
-    vals = sorted(collapsed_ref.keys())
-    #vals.append(1.0)
-    val = vals[idx]
-    #print len(collapsed_cdf)
-    for c, i in sorted(collapsed_cdf.iteritems()):
-        if c <= val:
-            intensity_map[i] = collapsed_ref[val]
-        else:
-            idx += 1
-            val = vals[idx]
-            intensity_map[i] = collapsed_ref[val]
-            #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
-
-    adjusted_img = np.uint8(np.array(
-        [map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))]))
-    #return intensity_map
+    adjusted_img = g[indices]
     return adjusted_img
+
+
+# def OLDhist_match(ref, img, gr=True, channel=0):
+#     """
+#     Adjust the intensities of img to match the histogram of ref using their
+#     cdf's.
+# 
+#     To be removed: this is twice as slow as the version above
+#     """
+# 
+#     # ref_intensities and ref_cdf are the quantized intensities
+#     if gr:
+#         ref_intensities, ref_cdf = img_cdf(gray(ref))
+#         #(im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
+#         (im_intensities, im_cdf, ind), im12 = neighborhood_cdf(gray(img))
+#     else:
+#         ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
+#         (im_intensities, im_cdf), im12 = neighborhood_cdf(img[:,:,channel])
+# 
+#     intensity_map = dict()
+#     collapsed_cdf = dict()
+#     collapsed_ref = dict()
+# 
+#     last = -1
+#     for c, i in zip(im_cdf, im_intensities):
+#         # This works because the cdf is a monotonically increasing function
+#         if i != last:
+#             collapsed_cdf[c] = i
+#             last = i
+# 
+#     last = ref_intensities[0]
+#     for c, i in zip(ref_cdf, ref_intensities):
+#         # This works because the cdf is a monotonically increasing function
+#         if i != last:
+#             collapsed_ref[c] = i-1
+#             last = i
+#     collapsed_ref[1.0] = 255
+#     #print sorted(collapsed_ref.values())
+# 
+#     idx = 0
+#     vals = sorted(collapsed_ref.keys())
+#     #vals.append(1.0)
+#     val = vals[idx]
+#     #print len(collapsed_cdf)
+#     for c, i in sorted(collapsed_cdf.iteritems()):
+#         if c <= val:
+#             intensity_map[i] = collapsed_ref[val]
+#         else:
+#             idx += 1
+#             val = vals[idx]
+#             intensity_map[i] = collapsed_ref[val]
+#             #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
+# 
+#     adjusted_img = np.uint8(np.array(
+#         [map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))]))
+#     return intensity_map
+#     return adjusted_img
 
 
 def calculate_img_offset(img1, img2, **matchops):
