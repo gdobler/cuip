@@ -150,7 +150,7 @@ def gray3(img):
     return gray_to_3(g)
 
 
-def img_cdf(img):
+def img_cdf(img, return_inverse=False):
     """
     Calculate the CDF of an image using quicksort. Optional returns from
     np.unique provide the histogram counts and indices for reconstruction of
@@ -158,12 +158,21 @@ def img_cdf(img):
     counts.
     """
 
-    c, i, f = np.unique(img, return_counts=True, return_inverse=True)
+    uniq = np.unique(img, return_counts=True, return_inverse=return_inverse)
+    c = uniq[0]
+    f = uniq[-1]
     f = np.cumsum(f).astype(np.float_)
     f /= f[-1]
 
     # Return the cdf as a tuple of the sorted array and normalized index
-    return (c, f, i)
+    thereturn = (c, f)
+
+    if return_inverse:
+        # Add the reverse indices to the return value, which if present are in
+        # position 1.
+        thereturn += (uniq[1], )
+
+    return thereturn  #(c, f, i)
 
 
 # def OLDimg_cdf(img):
@@ -174,13 +183,13 @@ def img_cdf(img):
 # 
 #     x = np.empty(img.shape[0]*img.shape[1], dtype=np.float_)
 #     x = np.sort(img, axis=None)
-#     c, f = np.unique(x, return_index=True)
+#     c, f, i = np.unique(x, return_index=True, return_inverse=True)
 #     mylen = 1./float(len(x))
 #     # f = f / float(len(x))
 #     f = f * mylen
 # 
 #     # Return the cdf as a tuple of the sorted array and normalized index
-#     return (c, f)
+#     return (c, f, i)
 
 
 def neighborhood_cdf(img, channel=None):
@@ -227,7 +236,7 @@ def neighborhood_cdf(img, channel=None):
     weights += img
 
     # return img_cdf(weights[:, :, ...]), weights
-    return img_cdf(weights), weights
+    return img_cdf(weights, return_inverse=True), weights
 
 
 # def OLDneighborhood_cdf(img, channel=None):
@@ -294,18 +303,20 @@ def hist_match(ref, img, gr=True, channel=0):
     cdf's.
     """
 
+    indices = np.empty(img.shape[0]*img.shape[1], dtype = np.int32)
+
     # ref_intensities and ref_cdf are the quantized intensities
     if gr:
-        ref_intensities, ref_cdf, ind = img_cdf(gray(ref))
+        ref_intensities, ref_cdf = img_cdf(gray(ref))
         #(im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
         (im_intensities, im_cdf,  indices), im12 = neighborhood_cdf(gray(img))
     else:
-        ref_intensities, ref_cdf, ind = img_cdf(ref[:, :, channel])
+        ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
         (im_intensities, im_cdf, indices), im12 = neighborhood_cdf(img[:,:,channel])
 
     g = np.interp(im_cdf, ref_cdf, ref_intensities)
 
-    adjusted_img = g[indices]
+    adjusted_img = g[indices].reshape(img.shape[:2])
     return adjusted_img
 
 
