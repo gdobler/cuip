@@ -175,23 +175,6 @@ def img_cdf(img, return_inverse=False):
     return thereturn  #(c, f, i)
 
 
-# def OLDimg_cdf(img):
-#     """
-#     Calculate the CDF of an image using quicksort.
-#     For this application we don't need the actual histograms.
-#     """
-# 
-#     x = np.empty(img.shape[0]*img.shape[1], dtype=np.float_)
-#     x = np.sort(img, axis=None)
-#     c, f, i = np.unique(x, return_index=True, return_inverse=True)
-#     mylen = 1./float(len(x))
-#     # f = f / float(len(x))
-#     f = f * mylen
-# 
-#     # Return the cdf as a tuple of the sorted array and normalized index
-#     return (c, f, i)
-
-
 def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
     """
     Calculate the CDF of an image with additional weighting for points in
@@ -254,50 +237,6 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
     return img_cdf(weights, return_inverse=True), weights
 
 
-# def OLDneighborhood_cdf(img, channel=None):
-#     ##return np.sum(img, axis=-1)/3
-#     """
-#     Calculate the CDF of an image with additional weighting for points in
-#     each pixel's neighborhood--with any luck this allows for each pixel to
-#     be ranked with (very few) ties.
-# 
-#     Create a new matrix using the reference pixels as base and add a fraction
-#     of intensity level depending on the intensities of the surrounding pixels:
-# 
-#          |2|
-#        |c|1|c|
-#      |2|1|*|1|2|
-#        |c|1|c|
-#          |2|
-# 
-#     """
-#     # TODO: break this out into its own routine with options for neighbor
-#     # definitions and weighting
-# 
-#     # convert the image to uint16 so we can do some fast addition on it
-#     # if a color channel is not provided convert to grayscale first
-#     if channel:
-#         img = np.uint16(img[:, :, channel])
-#     else:
-#         #img = np.uint16(gray(img))
-#         pass
-# 
-#     # Add 1/256th of the average of 12 nearby pixels to the original image
-#     weights = (img[3:-1, 2:-2, ...] + img[1:-3, 2:-2, ...] +  # sides d=1
-#                 img[2:-2, 1:-3, ...] + img[2:-2, 3:-1, ...] +
-#                 img[3:-1, 3:-1, ...] + img[3:-1, 1:-3, ...] +  # corners d=1
-#                 img[1:-3, 3:-1, ...] + img[1:-3, 1:-3, ...] +
-#                 img[4:, 2:-2, ...] + img[:-4, 2:-2, ...] +     # sides d=2
-#                 img[2:-2, 4:, ...] + img[2:-2, :-4, ...]) / (16. * 256.)
-#     # no. of pixels (actually 16, faster division?) / max 8-bit intensity
-#     # implicit cast to float
-# 
-#     # add to the original image
-#     im12 = img[2:-2, 2:-2, ...] + weights
-# 
-#     return img_cdf(im12[:, :, ...]), im12
-
-
 def get_intensity(cdf, intensities, vals):
     """
     Generator function to iteratively return intensities from one cdf given
@@ -333,63 +272,6 @@ def hist_match(ref, img, gr=True, channel=0):
 
     adjusted_img = g[indices].reshape(img.shape[:2])
     return adjusted_img
-
-
-# def OLDhist_match(ref, img, gr=True, channel=0):
-#     """
-#     Adjust the intensities of img to match the histogram of ref using their
-#     cdf's.
-# 
-#     To be removed: this is twice as slow as the version above
-#     """
-# 
-#     # ref_intensities and ref_cdf are the quantized intensities
-#     if gr:
-#         ref_intensities, ref_cdf = img_cdf(gray(ref))
-#         #(im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
-#         (im_intensities, im_cdf, ind), im12 = neighborhood_cdf(gray(img))
-#     else:
-#         ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
-#         (im_intensities, im_cdf), im12 = neighborhood_cdf(img[:,:,channel])
-# 
-#     intensity_map = dict()
-#     collapsed_cdf = dict()
-#     collapsed_ref = dict()
-# 
-#     last = -1
-#     for c, i in zip(im_cdf, im_intensities):
-#         # This works because the cdf is a monotonically increasing function
-#         if i != last:
-#             collapsed_cdf[c] = i
-#             last = i
-# 
-#     last = ref_intensities[0]
-#     for c, i in zip(ref_cdf, ref_intensities):
-#         # This works because the cdf is a monotonically increasing function
-#         if i != last:
-#             collapsed_ref[c] = i-1
-#             last = i
-#     collapsed_ref[1.0] = 255
-#     #print sorted(collapsed_ref.values())
-# 
-#     idx = 0
-#     vals = sorted(collapsed_ref.keys())
-#     #vals.append(1.0)
-#     val = vals[idx]
-#     #print len(collapsed_cdf)
-#     for c, i in sorted(collapsed_cdf.iteritems()):
-#         if c <= val:
-#             intensity_map[i] = collapsed_ref[val]
-#         else:
-#             idx += 1
-#             val = vals[idx]
-#             intensity_map[i] = collapsed_ref[val]
-#             #print idx, c, i, val, collapsed_ref[val], len(intensity_map)
-# 
-#     adjusted_img = np.uint8(np.array(
-#         [map(lambda x: intensity_map[x], im12[y]) for y in range(len(img))]))
-#     return intensity_map
-#     return adjusted_img
 
 
 def calculate_img_offset(img1, img2, **matchops):
