@@ -243,70 +243,6 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
                      "array or convertible into such."
             raise ValueError(errmsg)
 
-    weights = np.empty(img.shape, dtype=np.float_)
-    # Add 1/256th of the average of 12 nearby pixels to the original image
-    convolve(img, kernel, output = weights)
-    inversescale = 1/(16.*256.)
-    weights *= inversescale
-
-    # add to the original image
-    weights += img
-
-    # return img_cdf(weights[:, :, ...]), weights
-    return img_cdf(weights, return_inverse=True), weights
-
-
-def TESTneighborhood_cdf(img, channel=None, gr=True, kernel=None):
-    """
-    Calculate the CDF of an image with additional weighting for points in
-    each pixel's neighborhood--with any luck this allows for each pixel to
-    be ranked with (very few) ties.
-
-    Create a new matrix using the reference pixels as base and add a fraction
-    of intensity level depending on the intensities of the surrounding pixels.
-
-    The default kernel (if not provided) uses 12 surrounding pixels of equal
-    weights:
-
-         |1|
-       |1|1|1|
-     |1|1|*|1|1|
-       |1|1|1|
-         |1|
-
-    """
-
-    # convert the image to uint16 so we can do some fast addition on it
-    # if a color channel is not provided convert to grayscale first
-    if channel:
-        img = np.uint16(img[:, :, channel])
-    elif gr:
-        img = np.uint16(gray(img))
-
-    if not kernel:
-        # If not provided, use a default neighborhood kernel for convolution.
-        # Should the center pixel be included? Shouldn't matter since we're adding
-        # to the base image.
-        kernel0 = np.array([
-            [0,0,1,0,0],
-            [0,1,1,1,0],
-            [1,1,1,1,1],
-            [0,1,1,1,0],
-            [0,0,1,0,0]])
-        kernel = np.array([
-            [0,1,0],
-            [1,1,1],
-            [0,1,0]])
-    elif not isinstance(kernel, np.ndarray):
-        # Try to convert the provided kernel if it isn't an array
-        kernel = np.array(kernel)
-        # If the kernel is not numeric, or if the list is not rectangular, the 
-        # dtype will not be integer or float (probably string or object)
-        if kernel.dtype not in ['int64', 'float64']:
-            errmsg = "The kernel must be a real-valued numeric numpy " +\
-                     "array or convertible into such."
-            raise ValueError(errmsg)
-
     weights = np.empty(img.shape, dtype=np.uint32)
     # Add 1/256th of the average of 12 nearby pixels to the original image
     convolve(img, kernel, output = weights)
@@ -388,7 +324,7 @@ def hist_match(ref, img, gr=True, channel=0):
     if gr:
         ref_intensities, ref_cdf = img_cdf(gray(ref))
         #(im_intensities, im_cdf), im12 = neighborhood_cdf(gray(img))
-        (im_intensities, im_cdf,  indices), im12 = TESTneighborhood_cdf(img, gr=gr)
+        (im_intensities, im_cdf,  indices), im12 = neighborhood_cdf(img, gr=gr)
     else:
         ref_intensities, ref_cdf = img_cdf(ref[:, :, channel])
         (im_intensities, im_cdf, indices), im12 = neighborhood_cdf(img[:,:,channel])
