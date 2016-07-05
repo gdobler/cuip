@@ -184,13 +184,11 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
     Create a new matrix using the reference pixels as base and add a fraction
     of intensity level depending on the intensities of the surrounding pixels.
 
-    The default kernel (if not provided) uses 12 surrounding pixels of equal
+    The default kernel (if not provided) uses 4 surrounding pixels of equal
     weights:
 
          |1|
-       |1|1|1|
-     |1|1|*|1|1|
-       |1|1|1|
+       |1|*|1|
          |1|
 
     """
@@ -198,23 +196,24 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
     # convert the image to uint16 so we can do some fast addition on it
     # if a color channel is not provided convert to grayscale first
     if channel:
-        img = np.uint16(img[:, :, channel])
+        img = np.uint32(img[:, :, channel])
     elif gr:
-        img = np.uint16(gray(img))
+        img = np.uint32(gray(img))
 
     if not kernel:
         # If not provided, use a default neighborhood kernel for convolution.
         # Should the center pixel be included? Shouldn't matter since we're adding
         # to the base image.
-        kernel0 = np.array([
-            [0,0,1,0,0],
-            [0,1,1,1,0],
-            [1,1,1,1,1],
-            [0,1,1,1,0],
-            [0,0,1,0,0]])
+        # The old default kernel was bigger and took an extra 500-600 ms
+        #  kernel0 = np.array([
+        #      [0,0,1,0,0],
+        #      [0,1,1,1,0],
+        #      [1,1,1,1,1],
+        #      [0,1,1,1,0],
+        #      [0,0,1,0,0]])
         kernel = np.array([
             [0,1,0],
-            [1,1,1],
+            [1,0,1],
             [0,1,0]])
     elif not isinstance(kernel, np.ndarray):
         # Try to convert the provided kernel if it isn't an array
@@ -227,13 +226,26 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
             raise ValueError(errmsg)
 
     weights = np.empty(img.shape, dtype=np.uint32)
-    # Add 1/256th of the average of 12 nearby pixels to the original image
+    # Compute the sum of the pixels defined by the kernel
     convolve(img, kernel, output = weights)
 
-    # add to the original image
-    weights += img * 256
+    # Add weights to the original image (times 8 * 256 = 2048). 
+    # --> 256 = 2**8 = number of intensity levels in 8-bit image
+    # -->   8 = relative factor of image to neighbor offset.
+    #           Needs to be >4 since the convolution is the sum of four; we
+    #           use 8 since this just becomes a cheap bit shift operation.
+    # TODO: Now that we can pass a custom kernel the appropriate factor should
+    # be calculated instead of hardcoded. Seems unlikely anyone will actually
+    # use another kernel at this time (7/5/16: CMP).
+    # This yields the same results as creating fractional intensities in
+    # weights and adding to the original image but keeps the math in integer
+    # space.
+    # End result is a matrix whose relative values are the same as the original
+    # image except for an offset at each pixel dependent on its neighbors.
+    weights += img * 2048
 
-    # return img_cdf(weights[:, :, ...]), weights
+    # img_cdf doesn't care that the values are outside of [0,255], so its
+    # cdf is the same modulo the above scaling factor.
     return img_cdf(weights, return_inverse=True), weights
 
 
