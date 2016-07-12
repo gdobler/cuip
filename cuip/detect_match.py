@@ -10,6 +10,10 @@ import pylab as pl
 import os
 from scipy.ndimage.filters import convolve
 
+# Globals
+CAMHEIGHT, CAMWIDTH = (2160, 4096)
+
+
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
         Adapted from Ray Phan's code at
@@ -112,10 +116,63 @@ def feature_match(img1, img2, detectAlgo=cv2.SIFT(), matchAlgo='bf',
         raise Exception('wow')
 
     # The actual matching computation
-    matches = matcher.match(des1, des2)
+    matches = matcher.knnMatch(des1, des2, k=2)
 
     # Return the keypoints and matches as a tuple
     return (kp1, des1, kp2, des2, matches)
+
+
+def match_des(des1, des2, matchAlgo='bf',
+                  bfNorm=cv2.NORM_L2,
+                  flannIndexParams=dict(algorithm=0,  # =cv2.FLANN_INDEX_KDTREE
+                                        trees=5),
+                  flannSearchParams=dict(checks=20)
+                  ):
+    """
+    Match keypoint descriptors according to a brute force ('bf') or fast
+    approximation ('flann') method. Returns the matches.
+    """
+
+    support_match = ['bf', 'flann']
+
+    if matchAlgo not in support_match:
+        errmsg = 'Matching algorithm {} not supported ' \
+                 '(must be one of {})'.format(
+                  matchAlgo, ', '.join(support_match))
+        raise ValueError(errmsg)
+    elif matchAlgo == 'bf':
+        # bf = cv2.BFMatcher(cv2.NORM_L2) #cv2.NORM_HAMMING)
+        # TODO: decide whether to allow norm to be chosen by user or make
+        # dependent on algorithm
+        matcher = cv2.BFMatcher(bfNorm)
+    elif matchAlgo == 'flann':
+        # FLANN is an optimized matcher (versus brute force), so should play
+        # with this as well. Maybe brute force is better if we go with multiple
+        # subsamples to register image (instead of entire image)
+        matcher = cv2.FlannBasedMatcher(flannIndexParams, flannSearchParams)
+    else:
+        print 'should not have gotten here!'
+        raise Exception('wow')
+
+    # The actual matching computation
+    matches = matcher.knnMatch(des1, des2, k=2)
+
+    # Return the keypoints and matches as a tuple
+    return matches
+
+
+def feature_find(img1, detectAlgo=cv2.SIFT()):
+    """
+    Find features in imags img1. Returns the keypoints and descriptors.
+    """
+
+    support_detect = ['sift', 'surf', 'orb']
+
+    # The actual feature detection computations
+    kp1, des1 = detectAlgo.detectAndCompute(img1, None)
+
+    # Return the keypoints and matches as a tuple
+    return (kp1, des1)
 
 
 def gray_to_3(img):
@@ -246,6 +303,7 @@ def neighborhood_cdf(img, channel=None, gr=True, kernel=None):
 
     # img_cdf doesn't care that the values are outside of [0,255], so its
     # cdf is the same modulo the above scaling factor.
+    # And yeah, I'm being loose with the word 'modulo'.
     return img_cdf(weights, return_inverse=True), weights
 
 
@@ -342,6 +400,84 @@ def calculate_img_offset(img1, img2, **matchops):
     print "y_peak = {0}".format(yoffset)
     print "t_peak = {0}".format(toffset)
 
+    return xoffset, yoffset, toffset, xx, yy, dd, tt
+
+
+def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
+    '''
+    '''
+
+    img1 = ref
+    kp1, des1 = feature_find(img1, detectAlgo=detectAlgo)
+
+    for f in flist:
+        img2 = np.fromfile(f, dtype=np.uint8) \
+                .reshape(CAMWIDTH, CAMHEIGHT, 3)[:,:,-1]
+
+        print f,
+        kp2, des2 = feature_find(img2, detectAlgo=detectAlgo)
+
+        matches = match_des(des1, des2, **matchops)
+        #return matches
+        #break
+        #from opencv tutorial: Feature Matching + Homography to find Objects
+        good = []
+        for m,n in matches:
+            if m.distance < 0.9*n.distance:
+                good.append(m)
+
+        print len(matches), len(good)
+        xx = []
+        yy = []
+        dd = []
+        tt = []
+        for mat in good:
+
+            # Get the matching keypoints for each of the images
+            img1_idx = mat.queryIdx
+            img2_idx = mat.trainIdx
+            # x - columns
+            # y - rows
+            (x1, y1) = kp1[img1_idx].pt
+            (x2, y2) = kp2[img2_idx].pt
+            t1 = kp1[img1_idx].angle
+            t2 = kp2[img2_idx].angle
+
+            dx = x2-x1
+            dy = y2-y1
+            dt = t2-t1
+            xx.append(dx)
+            yy.append(dy)
+            tt.append(dt)
+            # Compute the distance between matching keypoints
+            d = (dx**2 + dy**2)**0.5
+            dd.append(d)
+
+    #    pl.hist(dd)
+    #    pl.show()
+
+        print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+        print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+        print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+        print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
+
+        xx = np.array(xx)
+        yy = np.array(yy)
+        dd = np.array(dd)
+        tt = np.array(tt)
+        xxint = xx.astype(int)
+        yyint = yy.astype(int)
+        ttint = tt.astype(int)
+
+        xoffset = (np.bincount(xxint-xxint.min()).argmax() + xxint.min())
+        yoffset = (np.bincount(yyint-yyint.min()).argmax() + yyint.min())
+        toffset = (np.bincount(ttint-ttint.min()).argmax() + ttint.min())
+
+        print "x_peak = {0}".format(xoffset)
+        print "y_peak = {0}".format(yoffset)
+        print "t_peak = {0}".format(toffset)
+
+    return None
     return xoffset, yoffset, toffset, xx, yy, dd, tt
 
 
