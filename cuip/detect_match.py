@@ -14,6 +14,10 @@ from scipy.ndimage.filters import convolve
 CAMHEIGHT, CAMWIDTH = (2160, 4096)
 
 
+def loadRAW(f):
+    return np.fromfile(f, dtype=np.uint8).reshape(CAMHEIGHT,CAMWIDTH,3)[:,:,::-1]
+
+
 def drawMatches(img1, kp1, img2, kp2, matches):
     """
         Adapted from Ray Phan's code at
@@ -403,7 +407,8 @@ def calculate_img_offset(img1, img2, **matchops):
     return xoffset, yoffset, toffset, xx, yy, dd, tt
 
 
-def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
+def calculate_img_offset_batch(ref, flist, histmatch = False,
+        detectAlgo=cv2.SIFT(), **matchops):
     '''
     '''
 
@@ -412,7 +417,10 @@ def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
 
     for f in flist:
         img2 = np.fromfile(f, dtype=np.uint8) \
-                .reshape(CAMWIDTH, CAMHEIGHT, 3)[:,:,-1]
+                .reshape(CAMHEIGHT, CAMWIDTH, 3)[:,:,::-1]
+        #img2 = gray(img2)
+        if histmatch:
+            img2 = hist_match(img1, img2)
 
         print f,
         kp2, des2 = feature_find(img2, detectAlgo=detectAlgo)
@@ -426,6 +434,23 @@ def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
             if m.distance < 0.9*n.distance:
                 good.append(m)
 
+        if len(good)>10: #MIN_MATCH_COUNT:
+            src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
+            dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
+
+            M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+            matchesMask = mask.ravel().tolist()
+
+            h,w = img1.shape
+            pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+            dst = cv2.perspectiveTransform(pts,M)
+
+            #img2 = cv2.polylines(img2,[np.int32(dst)],True,255,3, cv2.LINE_AA)
+
+        else:
+            print "Not enough matches are found - %d/%d" % (len(good),MIN_MATCH_COUNT)
+            matchesMask = None
+        #return dst
         print len(matches), len(good)
         xx = []
         yy = []
@@ -456,10 +481,10 @@ def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
     #    pl.hist(dd)
     #    pl.show()
 
-        print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
-        print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
-        print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
-        print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
+#         print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+#         print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+#         print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+#         print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
 
         xx = np.array(xx)
         yy = np.array(yy)
@@ -473,8 +498,8 @@ def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
         yoffset = (np.bincount(yyint-yyint.min()).argmax() + yyint.min())
         toffset = (np.bincount(ttint-ttint.min()).argmax() + ttint.min())
 
-        print "x_peak = {0}".format(xoffset)
-        print "y_peak = {0}".format(yoffset)
+        print "x_peak = {0}; ".format(xoffset),
+        print "y_peak = {0}; ".format(yoffset),
         print "t_peak = {0}".format(toffset)
 
     return None
@@ -482,63 +507,73 @@ def calculate_img_offset_batch(ref, flist, detectAlgo=cv2.SIFT(), **matchops):
 
 
 if __name__ == '__main__':
+    thedir = '/projects/projects/project-urban_lightscape/datamarts/urban_lightscape/2013/10/26/23.53.29/'
+    fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
+    flist = os.listdir(thedir)
+    #ref = loadRAW(thedir + flist[0])   # stable results! (but correct?)
+    ref = loadRAW(fname)                # unstable results! (and definitely wrong)
+    pl.imshow(gray(ref), cmap='gray')
+    pl.show()
+    flist = [thedir + f for f in flist]
+    calculate_img_offset_batch(gray(ref), flist, histmatch = False, detectAlgo=cv2.ORB())
+
     # Here's my sample image; could replace with a command line option
 #    fname = os.getenv('cuipimg') + 'temp__2014-09-29-125314-29546.raw'
 #    fname2 = os.getenv('cuipimg') + 'temp__2016-03-16-114846-163394.raw'
-    fname = "/projects/cusp/10101/0/2013/11/02/23.31.09/" + \
-        "oct08_2013-10-25-175504-71097.raw"
-    fname2 = "/projects/cusp/10101/0/2014/10/02/23.33.05/" + \
-        "temp__2014-09-29-125314-29726.raw"
-    img = np.fromfile(fname, dtype=np.uint8)
-    img = img.reshape(2160, 4096, 3)[:, :, ::-1]
+#    fname = "/projects/cusp/10101/0/2013/11/02/23.31.09/" + \
+#        "oct08_2013-10-25-175504-71097.raw"
+#    fname2 = "/projects/cusp/10101/0/2014/10/02/23.33.05/" + \
+#        "temp__2014-09-29-125314-29726.raw"
+#    img = np.fromfile(fname, dtype=np.uint8)
+#    img = img.reshape(2160, 4096, 3)[:, :, ::-1]
 #    img = img[300:800, 300:800, :]
-    img2 = np.fromfile(fname2, dtype=np.uint8)
-    img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
+#    img2 = np.fromfile(fname2, dtype=np.uint8)
+#    img2 = img2.reshape(2160, 4096, 3)[:, :, ::-1]
 #    img2 = img2[300:800, 300:800, :]
     # im4 = feature_match(img[300:800, 300:800, :], img) #, cv2.ORB())
-    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(),
-                                                  'flann')  # , cv2.ORB())
-    im4 = drawMatches(img2[:, :, 0], kp1, img[:, :, 0], kp2, matches)
-    pl.imshow(im4)
-    # Assumes the Qt4Agg backend in place for matplotlib
-    pl.show()
-
-    xx = []
-    yy = []
-    dd = []
-    for mat in matches:
-
-        # Get the matching keypoints for each of the images
-        img1_idx = mat.queryIdx
-        img2_idx = mat.trainIdx
-        # x - columns
-        # y - rows
-        (x1, y1) = kp1[img1_idx].pt
-        (x2, y2) = kp2[img2_idx].pt
-
-        dx = x2-x1
-        dy = y2-y1
-        xx.append(dx)
-        yy.append(dy)
-        # Compute the distance between matching keypoints
-        d = (dx**2 + dy**2)**0.5
-        dd.append(d)
-
-#    pl.hist(dd)
+#    kp1, des1, kp2, des2, matches = feature_match(img2, img, cv2.SIFT(),
+#                                                  'flann')  # , cv2.ORB())
+#    im4 = drawMatches(img2[:, :, 0], kp1, img[:, :, 0], kp2, matches)
+#    pl.imshow(im4)
+#    # Assumes the Qt4Agg backend in place for matplotlib
 #    pl.show()
-
-    print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
-    print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
-    print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
-
-    xx = np.array(xx)
-    yy = np.array(yy)
-    dd = np.array(dd)
-    xxint = xx.astype(int)
-    yyint = yy.astype(int)
-
-    print("x_peak = {0}".format(np.bincount(xxint-xxint.min()).argmax() +
-                                xxint.min()))
-
-    print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() +
-                                yyint.min()))
+#
+#    xx = []
+#    yy = []
+#    dd = []
+#    for mat in matches:
+#
+#        # Get the matching keypoints for each of the images
+#        img1_idx = mat.queryIdx
+#        img2_idx = mat.trainIdx
+#        # x - columns
+#        # y - rows
+#        (x1, y1) = kp1[img1_idx].pt
+#        (x2, y2) = kp2[img2_idx].pt
+#
+#        dx = x2-x1
+#        dy = y2-y1
+#        xx.append(dx)
+#        yy.append(dy)
+#        # Compute the distance between matching keypoints
+#        d = (dx**2 + dy**2)**0.5
+#        dd.append(d)
+#
+##    pl.hist(dd)
+##    pl.show()
+#
+#    print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+#    print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+#    print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+#
+#    xx = np.array(xx)
+#    yy = np.array(yy)
+#    dd = np.array(dd)
+#    xxint = xx.astype(int)
+#    yyint = yy.astype(int)
+#
+#    print("x_peak = {0}".format(np.bincount(xxint-xxint.min()).argmax() +
+#                                xxint.min()))
+#
+#    print("y_peak = {0}".format(np.bincount(yyint-yyint.min()).argmax() +
+#                                yyint.min()))
