@@ -452,11 +452,13 @@ def calculate_img_offset_batch(ref, flist, histmatch = False,
             matchesMask = None
         #return dst
         print len(matches), len(good), sum(matchesMask)
+
+        ransacpoints = np.asarray(good)[np.array(matchesMask, dtype=np.bool)]
         xx = []
         yy = []
         dd = []
         tt = []
-        for mat in good[matchesMask]:
+        for mat in ransacpoints: #[matchesMask]:
 
             # Get the matching keypoints for each of the images
             img1_idx = mat.queryIdx
@@ -502,7 +504,7 @@ def calculate_img_offset_batch(ref, flist, histmatch = False,
         print "y_peak = {0}; ".format(yoffset),
         print "t_peak = {0}".format(toffset)
 
-    return None
+    #return None
     return xoffset, yoffset, toffset, xx, yy, dd, tt
 
 
