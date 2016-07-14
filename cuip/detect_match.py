@@ -413,14 +413,13 @@ def calculate_img_offset_batch(ref, flist, histmatch = False,
     '''
 
     img1 = ref
-    kp1, des1 = feature_find(img1, detectAlgo=detectAlgo)
+    kp1, des1 = feature_find(gray(img1), detectAlgo=detectAlgo)
 
     for f in flist:
-        img2 = np.fromfile(f, dtype=np.uint8) \
-                .reshape(CAMHEIGHT, CAMWIDTH, 3)[:,:,::-1]
+        img2 = loadRAW(f)
         #img2 = gray(img2)
         if histmatch:
-            img2 = hist_match(img1, img2)
+            img2 = np.uint8(hist_match(img1, img2))
 
         print f,
         kp2, des2 = feature_find(img2, detectAlgo=detectAlgo)
@@ -431,32 +430,33 @@ def calculate_img_offset_batch(ref, flist, histmatch = False,
         #from opencv tutorial: Feature Matching + Homography to find Objects
         good = []
         for m,n in matches:
-            if m.distance < 0.9*n.distance:
+            if m.distance < 0.8*n.distance:
                 good.append(m)
 
         if len(good)>10: #MIN_MATCH_COUNT:
             src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
             dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
 
+            #don't really need a homography, but getAffineTransform doesn't seem
+            #to support RANSAC
             M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
             matchesMask = mask.ravel().tolist()
+            #print matchesMask
+            # h,w = img1.shape[:2]
+            # pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
+            # dst = cv2.perspectiveTransform(pts,M)
 
-            h,w = img1.shape
-            pts = np.float32([ [0,0],[0,h-1],[w-1,h-1],[w-1,0] ]).reshape(-1,1,2)
-            dst = cv2.perspectiveTransform(pts,M)
-
-            #img2 = cv2.polylines(img2,[np.int32(dst)],True,255,3, cv2.LINE_AA)
-
+            # img6 = cv2.polylines(img2,[np.int32(dst)],True,255,3) #, cv2.LINE_AA)
         else:
             print "Not enough matches are found - %d/%d" % (len(good),MIN_MATCH_COUNT)
             matchesMask = None
         #return dst
-        print len(matches), len(good)
+        print len(matches), len(good), sum(matchesMask)
         xx = []
         yy = []
         dd = []
         tt = []
-        for mat in good:
+        for mat in good[matchesMask]:
 
             # Get the matching keypoints for each of the images
             img1_idx = mat.queryIdx
