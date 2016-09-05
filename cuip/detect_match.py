@@ -349,17 +349,110 @@ def hist_match(ref, img, gr=True, channel=0):
     return adjusted_img
 
 
-def calculate_img_offset(img1, img2, **matchops):
-    '''
-    '''
+# def calculate_img_offset(img1, img2, **matchops):
+#     '''
+#     '''
+# 
+#     kp1, des1, kp2, des2, matches = feature_match(img1, img2, **matchops)
+#             #cv2.SIFT(), 'flann')  # , cv2.ORB())
+#     xx = []
+#     yy = []
+#     dd = []
+#     tt = []
+#     for mat in matches:
+# 
+#         # Get the matching keypoints for each of the images
+#         img1_idx = mat.queryIdx
+#         img2_idx = mat.trainIdx
+#         # x - columns
+#         # y - rows
+#         (x1, y1) = kp1[img1_idx].pt
+#         (x2, y2) = kp2[img2_idx].pt
+#         t1 = kp1[img1_idx].angle
+#         t2 = kp2[img2_idx].angle
+# 
+#         dx = x2-x1
+#         dy = y2-y1
+#         dt = t2-t1
+#         xx.append(dx)
+#         yy.append(dy)
+#         tt.append(dt)
+#         # Compute the distance between matching keypoints
+#         d = (dx**2 + dy**2)**0.5
+#         dd.append(d)
+# 
+# #    pl.hist(dd)
+# #    pl.show()
+# 
+#     print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
+#     print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
+#     print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
+#     print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
+# 
+#     xx = np.array(xx)
+#     yy = np.array(yy)
+#     dd = np.array(dd)
+#     tt = np.array(tt)
+#     xxint = xx.astype(int)
+#     yyint = yy.astype(int)
+#     ttint = tt.astype(int)
+# 
+#     xoffset = (np.bincount(xxint-xxint.min()).argmax() + xxint.min())
+#     yoffset = (np.bincount(yyint-yyint.min()).argmax() + yyint.min())
+#     toffset = (np.bincount(ttint-ttint.min()).argmax() + ttint.min())
+# 
+#     print "x_peak = {0}".format(xoffset)
+#     print "y_peak = {0}".format(yoffset)
+#     print "t_peak = {0}".format(toffset)
+# 
+#     return xoffset, yoffset, toffset, xx, yy, dd, tt
 
-    kp1, des1, kp2, des2, matches = feature_match(img1, img2, **matchops)
-            #cv2.SIFT(), 'flann')  # , cv2.ORB())
-    xx = []
-    yy = []
-    dd = []
-    tt = []
-    for mat in matches:
+
+def calculate_img_offset(ref, img, histmatch=False, histdir='left',
+        detectAlgo=cv2.SIFT(), **matchops):
+    ''
+    ''
+
+    img1 = ref
+    img2 = img
+
+    if histmatch:
+        if histdir == 'left':
+            img1 = gray(img1)
+            img2 = np.uint8(hist_match(img1, img2), gr=True)
+        else:
+            img1 = np.uint8(hist_match(img2, img1), gr=True)
+            img2 = gray(img2)
+
+    print f,
+    kp1, des1 = feature_find(img1, detectAlgo=detectAlgo)
+    kp2, des2 = feature_find(img2, detectAlgo=detectAlgo)
+
+    matches = match_des(des1, des2, **matchops)
+    #from opencv tutorial: Feature Matching + Homography to find Objects
+    good = []
+    for m,n in matches:
+        if m.distance < 0.8*n.distance:
+            good.append(m)
+
+    if len(good)>10: #MIN_MATCH_COUNT:
+        src_pts = np.float32([ kp1[m.queryIdx].pt for m in good ]).reshape(-1,1,2)
+        dst_pts = np.float32([ kp2[m.trainIdx].pt for m in good ]).reshape(-1,1,2)
+
+        #don't really need a homography, but getAffineTransform doesn't seem
+        #to support RANSAC
+        M, mask = cv2.findHomography(src_pts, dst_pts, cv2.RANSAC,5.0)
+        matchesMask = mask.ravel().tolist()
+    else:
+        print "Not enough matches are found - %d/%d" % (len(good),MIN_MATCH_COUNT)
+        matchesMask = None
+    print len(matches), len(good), sum(matchesMask)
+
+    ransacpoints = np.asarray(good)[np.array(matchesMask, dtype=np.bool)]
+    srcpts = []
+    dstpts = []
+
+    for mat in ransacpoints: #[matchesMask]:
 
         # Get the matching keypoints for each of the images
         img1_idx = mat.queryIdx
@@ -368,44 +461,22 @@ def calculate_img_offset(img1, img2, **matchops):
         # y - rows
         (x1, y1) = kp1[img1_idx].pt
         (x2, y2) = kp2[img2_idx].pt
-        t1 = kp1[img1_idx].angle
-        t2 = kp2[img2_idx].angle
-
-        dx = x2-x1
-        dy = y2-y1
-        dt = t2-t1
-        xx.append(dx)
-        yy.append(dy)
-        tt.append(dt)
         # Compute the distance between matching keypoints
-        d = (dx**2 + dy**2)**0.5
-        dd.append(d)
+        srcpts.append([x1, y1])
+        dstpts.append([x2, y2])
 
-#    pl.hist(dd)
-#    pl.show()
+    srcarray = np.array(srcpts,dtype=np.float32).reshape(1,len(srcpts),2)
+    dstarray = np.array(dstpts,dtype=np.float32).reshape(1,len(dstpts),2)
+    print srcarray, dstarray
 
-    print 'dx mean = {}, dx sd = {}'.format(np.mean(xx), np.std(xx))
-    print 'dy mean = {}, dy sd = {}'.format(np.mean(yy), np.std(yy))
-    print 'dist mean = {}, dist sd = {}'.format(np.mean(dd), np.std(dd))
-    print 'dt mean = {}, dt sd = {}'.format(np.mean(tt), np.std(tt))
-
-    xx = np.array(xx)
-    yy = np.array(yy)
-    dd = np.array(dd)
-    tt = np.array(tt)
-    xxint = xx.astype(int)
-    yyint = yy.astype(int)
-    ttint = tt.astype(int)
-
-    xoffset = (np.bincount(xxint-xxint.min()).argmax() + xxint.min())
-    yoffset = (np.bincount(yyint-yyint.min()).argmax() + yyint.min())
-    toffset = (np.bincount(ttint-ttint.min()).argmax() + ttint.min())
-
-    print "x_peak = {0}".format(xoffset)
-    print "y_peak = {0}".format(yoffset)
-    print "t_peak = {0}".format(toffset)
-
-    return xoffset, yoffset, toffset, xx, yy, dd, tt
+    rt = cv2.estimateRigidTransform(srcarray, dstarray, False)
+    print rt
+    if not rt is None:
+        pl.imshow(img2, cmap='gray')
+        pl.show()
+        print 'dx = ', rt[0,2],
+        print 'dy = ', rt[1,2],
+        print 'dt = ', asin(rt[1,0])
 
 
 def calculate_img_offset_batch(ref, flist, histmatch = False,
