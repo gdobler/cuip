@@ -32,7 +32,7 @@ def cuipLogger(loggername, every="midnight", tofile=True):
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                             '..',
                                             'logs'))
-    print BASE_DIR
+    #print BASE_DIR
     LOG_FNAME = os.path.join(BASE_DIR, loggername)
     logger = logging.getLogger(loggername)
 
