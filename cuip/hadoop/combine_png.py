@@ -5,7 +5,7 @@ from scipy.ndimage import imread
 import os
 
 PATH = '/uofs10tb_gpfs/roof/1/'
-outpath = '/home/cusp/mohitsharma44/uo/cuip/cuip/hadoop/output'
+OUTPATH = '/home/cusp/mohitsharma44/uo/cuip/cuip/hadoop/output'
 logger = cuiplogger.cuipLogger(loggername="COMBINE", tofile=False)
 
 # File shape
@@ -13,6 +13,7 @@ nrows = 2160
 ncols = 4096
 ndims = 3
 
+# Date ranges
 start_date = '2016.03.09'
 start_time = '23.55.00'
 end_date = '2016.03.10'
@@ -46,17 +47,37 @@ def groupFiles(n, gf):
 comb_imgs = np.zeros([nrows*combine, ncols, ndims], np.uint8)
 gf_gen = getFiles(PATH, start_date, start_time, end_date, end_time)
 
+def pngtoraw(img_arr, gfgen, n, outpath):
+    """
+    Convert png images to raw files
+    Parameters
+    ----------
+    img_arr: np.array
+        numpy array of the size of the image
+        example:
+            img_arr = np.zeros([nrows*n, ncols, ndims], np.uint8)
+            where `n` is the total number of images to be combined
+            by stacking vertically
+    gfgen: `generator`
+        generator containing file paths
+        .. note: `len` of the list should be same as `n`
+    n: int
+        Number of files to stack together vertically
+    outpath: str
+        path where the file should be written to
+    """
+    for ind, imgs in enumerate(groupFiles(n, gfgen)):
+        img_arr[nrows*ind: nrows*(ind+1), :, :] = imread(imgs, mode='RGB')
+    # Rename the extension of the file to .raw.
+    # outfile name is same as the n(th) filename.raw
+    newfname = os.path.basename(imgs)[:-4]+".raw"
+    logger.info("Writing: "+str(newfname))
+    img_arr.tofile(os.path.join(outpath, newfname))
+
 # Combine images
 while True:
     try:
-        for ind, imgs in enumerate(groupFiles(combine, gf_gen)):
-            # By default, mode='RGB' means dtype = np.uint8
-            comb_imgs[nrows*ind: nrows*(ind+1), :, :] = imread(imgs, mode='RGB')
-        newfname = os.path.basename(imgs)[:-4]+".raw"
-
-        logger.info("Writing: "+str(newfname))
-        comb_imgs.tofile(os.path.join(outpath, newfname))
-
+        pngtoraw(comb_imgs, gf_gen, combine, OUTPATH)
     except StopIteration as si:
         logger.warning("Stop Iteration")
         break
