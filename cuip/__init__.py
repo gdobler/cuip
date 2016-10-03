@@ -1,5 +1,6 @@
 from .weather import *
 from .utils import *
+from .hadoop import *
 
 import pkg_resources
 
