@@ -38,7 +38,7 @@ def cuipLogger(loggername, every="midnight", tofile=True):
 
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s -- %(message)s", datefmt="%d-%m-%Y %H:%M:%S")
+        "%(asctime)s - %(name)8s - [%(levelname)7s] -- (%(filename)s:%(lineno)s) %(message)s", datefmt="%d-%m-%Y %H:%M:%S")
 
     # Setup TimedRotatingFileHandler
     f_handler = logging.handlers.TimedRotatingFileHandler(
