@@ -25,7 +25,7 @@ class HadoopImageCluster(object):
         fname_ext: str
             extension for binary filenames
         """
-        conf = SparkConf().setAppName(APP_NAME)
+        conf = SparkConf().setAppName(APP_NAME)#.setMaster('local[*]')
         conf = conf.set("spark.executor.memory", "2g")
         conf = conf.set("spark.executor.cores", "10")
         if sc:
@@ -88,20 +88,8 @@ class HadoopImageCluster(object):
 
         """
         def _mean(x):
-            def _perDim(img, ndims):
-                """
-                Returns mean of every dimension for an array
-                """
-                mean_per_dim = []
-                for d in range(ndims):
-                    mean_per_dim.append(np.mean(img[:,:,d]))
-                return mean_per_dim
+            return [x[i*nrows*ncols*ndims: (i+1)*nrows*ncols*ndims].reshape(nrows, ncols, ndims).mean(axis=(0,1)) for i in range(n)]
 
-            # Return mean for all stacked images and their dimensions
-            return [_perDim(
-                    x[i*nrows*ncols*ndims : (i+1)*nrows*ncols*ndims].reshape(nrows, ncols, ndims), 
-                    ndims) 
-                    for i in range(n)]
         mean_rdd = self.img_rdd.mapValues(_mean)
         if not asdf:
             return mean_rdd
