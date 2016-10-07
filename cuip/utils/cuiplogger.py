@@ -32,13 +32,13 @@ def cuipLogger(loggername, every="midnight", tofile=True):
     BASE_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__),
                                             '..',
                                             'logs'))
-    print BASE_DIR
+    #print BASE_DIR
     LOG_FNAME = os.path.join(BASE_DIR, loggername)
     logger = logging.getLogger(loggername)
 
     logger.setLevel(logging.DEBUG)
     formatter = logging.Formatter(
-        "%(asctime)s - %(name)s - %(levelname)s -- %(message)s", datefmt="%d-%m-%Y %H:%M:%S")
+        "%(asctime)s - %(name)8s - [%(levelname)7s] -- (%(filename)s:%(lineno)s) %(message)s", datefmt="%d-%m-%Y %H:%M:%S")
 
     # Setup TimedRotatingFileHandler
     f_handler = logging.handlers.TimedRotatingFileHandler(

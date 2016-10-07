@@ -19,6 +19,9 @@ ipynb_checkpoin[ts]/*
 # C extensions
 *.so
 
+# Test Outputs
+output/
+
 # Project files
 .ropeproject
 .project
