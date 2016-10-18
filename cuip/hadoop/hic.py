@@ -122,7 +122,7 @@ class HadoopImageCluster(object):
                 To see the output, rdd.collect()
 
         """
-        mean_rdd = img_rdd.mapValues(lambda x: [x[k].mean(axis=(0,1)) for k in range(n)])
+        mean_rdd = self.img_rdd.mapValues(lambda x: [x[k].mean(axis=(0,1)) for k in range(n)])
 
         if not asdf:
             return mean_rdd
@@ -158,7 +158,7 @@ class HadoopImageCluster(object):
             To see the output, rdd.collect()
 
         """
-        std_rdd = img_rdd.mapValues(lambda x: [x[k].std() for k in range(n)])
+        std_rdd = self.img_rdd.mapValues(lambda x: [x[k].std() for k in range(n)])
         
         if not asdf:
             return std_rdd
@@ -191,7 +191,7 @@ class HadoopImageCluster(object):
                 result.append((x[k] > (x[k].mean(axis=(0,1))+ n*(x[k].std()))).any(-1).sum())
             return result
         
-        bright = img_rdd.mapValues(_getbright)
+        bright = self.img_rdd.mapValues(_getbright)
         if plot = False:
             return bright
         if plot = True:
