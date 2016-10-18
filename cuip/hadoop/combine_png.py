@@ -4,8 +4,8 @@ from cuip.cuip.utils import cuiplogger
 from scipy.ndimage import imread
 import os
 
-PATH = '/uofs10tb_gpfs/roof/1/'
-OUTPATH = '/home/cusp/mohitsharma44/uo/cuip/cuip/hadoop/output'
+PATH = '/projects/cusp/10101/0/'
+OUTPATH = '/home/cusp/mohitsharma44/uo/cuip/cuip/hadoop/output/bad_combined'
 logger = cuiplogger.cuipLogger(loggername="COMBINE", tofile=False)
 
 # File shape
@@ -14,10 +14,10 @@ ncols = 4096
 ndims = 3
 
 # Date ranges
-start_date = '2016.03.09'
-start_time = '23.55.00'
-end_date = '2016.03.10'
-end_time = '00.05.00'
+start_date = '2013.11.17'
+start_time = '17.00.00'
+end_date = '2013.11.17'
+end_time = '23.55.00'
 
 # Number of files to combine
 combine = 4
@@ -47,9 +47,9 @@ def groupFiles(n, gf):
 comb_imgs = np.zeros([nrows*combine, ncols, ndims], np.uint8)
 gf_gen = getFiles(PATH, start_date, start_time, end_date, end_time)
 
-def pngtoraw(img_arr, gfgen, n, outpath):
+def combinedtoraw(img_arr, gfgen, n, outpath):
     """
-    Convert png images to raw files
+    Convert raw/ png images to raw files
     Parameters
     ----------
     img_arr: np.array
@@ -67,7 +67,12 @@ def pngtoraw(img_arr, gfgen, n, outpath):
         path where the file should be written to
     """
     for ind, imgs in enumerate(groupFiles(n, gfgen)):
-        img_arr[nrows*ind: nrows*(ind+1), :, :] = imread(imgs, mode='RGB')
+        if imgs[-3:].lower() == 'png':
+            img_arr[nrows*ind: nrows*(ind+1), :, :] = imread(imgs, mode='RGB')
+        elif imgs[-3:].lower() == 'raw':
+            img_arr[nrows*ind: nrows*(ind+1), :, :] = np.fromfile(imgs, dtype=np.uint8).reshape(nrows, ncols, ndims)
+        else:
+            logger.error("File Format not supported "+str(imgs))
     # Rename the extension of the file to .raw.
     # outfile name is same as the n(th) filename.raw
     newfname = os.path.basename(imgs)[:-4]+".raw"
@@ -77,7 +82,7 @@ def pngtoraw(img_arr, gfgen, n, outpath):
 # Combine images
 while True:
     try:
-        pngtoraw(comb_imgs, gf_gen, combine, OUTPATH)
+        combinedtoraw(comb_imgs, gf_gen, combine, OUTPATH)
     except StopIteration as si:
         logger.warning("Stop Iteration")
         break
