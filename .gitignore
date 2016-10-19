@@ -21,6 +21,7 @@ ipynb_checkpoin[ts]/*
 
 # Test Outputs
 output/
+no_share/
 
 # Project files
 .ropeproject

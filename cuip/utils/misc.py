@@ -20,15 +20,21 @@ def pathrange(basepath, start, end, delta):
     `Generator` containing paths
     """
     curr = start
-    while curr < end:
-        yield "{path}/{year}/{month:0>2}/{day:0>2}/{hour:0>2}.{minute:0>2}.{second:0>2}".format(path = basepath,
-                                                                                                year = curr.year,
-                                                                                                month = curr.month,
-                                                                                                day = curr.day,
-                                                                                                hour = curr.hour,
-                                                                                                minute = curr.minute,
-                                                                                                second = curr.second)
-        curr += delta
+    try:
+        while curr < end:
+            next_path = "{path}/{year}/{month:0>2}/{day:0>2}/{hour:0>2}.{minute:0>2}.{second:0>2}".format(path = basepath,
+                                                                                                          year = curr.year,
+                                                                                                          month = curr.month,
+                                                                                                          day = curr.day,
+                                                                                                          hour = curr.hour,
+                                                                                                          minute = curr.minute,
+                                                                                                          second = curr.second)
+            if os.path.exists(next_path):
+                yield next_path
+                
+            curr += delta
+    except Exception as ex:
+        logger.error("Error in path_range: "+str(ex))
 
         # os.path.join doesn't respect the formatting
         # Leaving the code here just to remember
@@ -71,7 +77,7 @@ def getFiles(path, start_date, start_time, end_date, end_time):
     paths = pathrange(os.path.abspath(path), 
                       datetime(int(s_year), int(s_month), int(s_day), int(s_hour), int(s_min), int(s_sec)), 
                       datetime(int(e_year), int(e_month), int(e_day), int(e_hour), int(e_min), int(e_sec)), 
-                      timedelta(minutes=5)
+                      timedelta(seconds=1)
                       )
 
     try:
