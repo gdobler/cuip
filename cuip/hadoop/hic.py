@@ -1,5 +1,10 @@
 __author__ = "Mohit Sharma"
 
+# No Interactive Plotting/ Plotting on screen
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
@@ -13,7 +18,7 @@ class HadoopImageCluster(object):
     """
     Hadoop Image Cluster
     """
-    def __init__(self, sc, path=None, fname=None, fname_ext=None, n, rows, cols, dims):
+    def __init__(self, sc, path=None, fname=None, fname_ext=None, n=4, rows=2160, cols=4096, dims=3):
         """
         Parameters
         ----------
@@ -40,8 +45,14 @@ class HadoopImageCluster(object):
             reshaped as `(rows, cols, dims)`
         """
         conf = SparkConf().setAppName(APP_NAME)#.setMaster('local[*]')
-        conf = conf.set("spark.executor.memory", "2g")
-        conf = conf.set("spark.executor.cores", "2")
+        conf = conf.set("spark.executor.memory", "8g")
+        conf = conf.set("spark.executor.cores", "4")
+        conf = conf.set("spark.driver.memory", "8g")
+        # To solve for losing spark executors
+        conf = conf.set("spark.network.timeout", "36000000")
+        conf = conf.set("spark.yarn.executor.memoryOverhead", "600")
+        conf = conf.set("spark.dynamicAllocation.enabled", "true")
+        conf = conf.set("spark.executor.heartbeatInterval", "36000000")
         if sc:
             self.sc = sc
         else:
@@ -58,6 +69,7 @@ class HadoopImageCluster(object):
         self.img_rdd = self._getImgRDD(self.path, 
                                        self.fname, 
                                        self.fname_ext,
+                                       n = self.n,
                                        nrows = self.rows,
                                        ncols = self.cols,
                                        ndims = self.dims)
@@ -92,14 +104,13 @@ class HadoopImageCluster(object):
         img_size = nrows*ncols*ndims
 
         if fname:
-            imgpair = self.sc.binaryFiles(os.path.join(path, fname))
+            imgpair = self.sc.binaryFiles(os.path.join(path, fname), minPartitions=100)
         else:
             # /<path>/*.raw
-            imgpair = self.sc.binaryFiles(os.path.join(path, "*"+fname_ext))
+            imgpair = self.sc.binaryFiles(os.path.join(path, "*"+fname_ext), minPartitions=100)
         
         def _reshape(x):
-            img_size = rows*cols*dims
-            return [x[i*img_size: (i+1)*img_size].reshape(rows, cols, dims) for i in range(n)]
+            return [x[i*img_size: (i+1)*img_size].reshape(nrows, ncols, ndims) for i in range(n)]
     
         rdd = imgpair.map(lambda (x,y): (x, (np.asarray(bytearray(y), 
                                                         dtype=np.uint8))))
@@ -109,12 +120,14 @@ class HadoopImageCluster(object):
         return rdd_resh
 
 
-    def mean(self, n, asdf=True):
+    def mean(self, n, bin, asdf=True):
         """
         Return the mean of the n-dim numpy array
         n: int
             if arrays are vertically stacked, n is the 
             total number of stacked arrays
+        bin: int
+            factor to bin the image by
         asdf: bool
             True: return the output as a dataframe
                 To see the output, df.show(truncate=False)
@@ -122,7 +135,7 @@ class HadoopImageCluster(object):
                 To see the output, rdd.collect()
 
         """
-        mean_rdd = self.img_rdd.mapValues(lambda x: [x[k].mean(axis=(0,1)) for k in range(n)])
+        mean_rdd = self.img_rdd.mapValues(lambda x: [x[k][::bin, ::bin].mean(axis=(0,1)) for k in range(n)])
 
         if not asdf:
             return mean_rdd
@@ -143,7 +156,7 @@ class HadoopImageCluster(object):
             df = self.sqlcontext.createDataFrame(mean_formatted, schema)
             return df
 
-    def std(self, n, asdf=True):
+    def std(self, n, bin, asdf=True):
         """
         Return standard deviation for images
         Parameters
@@ -151,6 +164,8 @@ class HadoopImageCluster(object):
         n: int
             if arrays are vertically stacked, n is the 
             total number of stacked arrays
+        bin: int
+            factor to bin the image by
         asdf: bool
             True: return the output as a dataframe
             To see the output, df.show(truncate=False)
@@ -158,7 +173,7 @@ class HadoopImageCluster(object):
             To see the output, rdd.collect()
 
         """
-        std_rdd = self.img_rdd.mapValues(lambda x: [x[k].std() for k in range(n)])
+        std_rdd = self.img_rdd.mapValues(lambda x: [x[k][::bin, ::bin].std() for k in range(n)])
         
         if not asdf:
             return std_rdd
@@ -174,43 +189,48 @@ class HadoopImageCluster(object):
             df = self.sqlcontext.createDataFrame(std_formatted, schema)
             return df
 
-    def getBright(n, plot=True):
+    def getBright(self, n, bin):
         """
         Find the pixels brighter than 5 sigma
         Parameters
         ----------
         n: int
             n for n*sigma outlier
-        plot: bool
-            save plot of brightpixels > n*sigma
+        bin: int
+            factor to bin the image by
         .. note: Seriously need to come up with better names
         """
         def _getbright(x):
             result = []
             for k in range(combined):
-                result.append((x[k] > (x[k].mean(axis=(0,1))+ n*(x[k].std()))).any(-1).sum())
+                result.append((x[k][::bin,::bin] > (x[k][::bin,::bin].mean(axis=(0,1))+ n*(x[k][::bin,::bin].std()))).any(-1).sum())
             return result
         
         bright = self.img_rdd.mapValues(_getbright)
-        if plot = False:
-            return bright
-        if plot = True:
-            brights = bright.toLocalIterator()
-            merged = list(chain.from_iterable([x[1] for x in brights]))
-            plt.plot([i for i in range(len(merged))], merged)
-            
-            
+        return bright
+                    
 if __name__ == "__main__":
-    f_path = '/user/mohitsharma44/uo_images'
+    f_path = '/user/mohitsharma44/uo_images/bad_combined'
     f_ext = '.raw'
-    rows = 2160
-    cols = 4096
-    dims = 3
+    nrows = 2160
+    ncols = 4096
+    ndims = 3
     combined = 4
-    hic = HadoopImageCluster(sc=None, path=f_path, fname=None, fname_ext=f_ext, combined, nrows, ncols, ndims)
+    hic = HadoopImageCluster(sc=None, 
+                             path=f_path, 
+                             fname=None, 
+                             fname_ext=f_ext, 
+                             n=combined, 
+                             rows=nrows, 
+                             cols=ncols, 
+                             dims=ndims)
     # Obtain Mean
     #df = hic.mean(combined, nrows=rows, ncols=cols, ndims=dims, asdf=True)
     #df.show(truncate = False)
     # Obtain Std dev
     #std = hic.std(combined, nrows=rows, ncols=cols, ndims=dims, asdf=False)
-    hic.getBright(5, True)
+    res = hic.getBright(5, 1)
+    def toStr(data):
+        return ','.join(str(d) for d in data)
+    out = res.map(toStr)
+    out.saveAsTextFile('/user/mohitsharma44/dataplot.txt')
