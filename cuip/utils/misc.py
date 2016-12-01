@@ -51,7 +51,7 @@ def pathrange(basepath, start, end, delta):
         curr += delta
         """
 
-def getFiles(path, start_date, start_time, end_date, end_time):
+def get_files(path, start_date, start_time, end_date, end_time):
     """
     Fetch all files between `start_date`, `start_time` and
     `end_date`, `end_time`
