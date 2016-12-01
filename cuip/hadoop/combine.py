@@ -5,6 +5,7 @@ from cuip.cuip.utils import cuiplogger
 from cuip.cuip.utils.misc import getFiles
 from itertools import islice
 import numpy as np
+import psycopg2
 from scipy.ndimage import imread 
 import multiprocessing
 import os
@@ -18,9 +19,9 @@ OUTPATH = '/home/cusp/mohitsharma44/uo/cuip/cuip/hadoop/output/bad_combined'
 
 # Range of dates
 start_date = "2013.11.17"
-start_time = "00.00.01"
+start_time = "17.00.00"
 end_date   = "2013.11.17"
-end_time   = "00.05.01"
+end_time   = "23.59.59"
 
 s_year, s_month, s_day = start_date.split('.')
 s_hour, s_min, s_sec   = start_time.split('.')
@@ -164,8 +165,8 @@ if __name__ == "__main__":
     results = multiprocessing.Queue()
     
     # Files to be comined together
-    combine = 4
-    BIN = 2
+    combine = 64
+    BIN = 8
 
     # File shapes
     nrows = 2160
@@ -176,10 +177,10 @@ if __name__ == "__main__":
     comb_imgs = np.zeros([nrows*combine/BIN, ncols/BIN, ndims], np.uint8)
     
     # Start consumers
-    num_workers = 2#multiprocessing.cpu_count()/ 4
+    num_workers = 20#multiprocessing.cpu_count()/ 4
     logger.info('Creating %d Workers' % num_workers)
     workers = [ Worker(tasks, results)
-                  for i in xrange(num_workers) ]
+                for i in xrange(num_workers) ]
     for w in workers:
         w.start()
 
@@ -189,22 +190,26 @@ if __name__ == "__main__":
             tasks.put(None)
     
     # Enqueue jobs
+    filectr = 0
     num_jobs = len(files_gen_list)
-    for gens in files_gen_list:
-        while True:
-            filelist = [z for z in islice(gens, combine)]
-            if filelist:
-                tasks.put(StackImages(comb_imgs, filelist, BIN, nrows, ncols, ndims, OUTPATH))
-            else:
-                logger.info("All Tasks Added")
-                poisonChildren()
-                break
-
-    # Wait for all of the tasks to finish
-    tasks.join()
+    try:
+        for gens in files_gen_list:
+            while True:
+                filelist = [z for z in islice(gens, combine)]
+                filectr += len(filelist)
+                if filelist:
+                    tasks.put(StackImages(comb_imgs, filelist, BIN, nrows, ncols, ndims, OUTPATH))
+                else:
+                    logger.info(filectr)
+                    logger.info("Tasks Added")
+                    break
+    finally:
+        poisonChildren()
+        # Wait for all of the tasks to finish
+        tasks.join()
     
     # Start printing results
-    while num_jobs:
-        result = results.get()
-        print 'Result:', result
-        num_jobs -= 1
+    #while num_jobs:
+    #    result = results.get()
+    #    print 'Result:', result
+    #    num_jobs -= 1
