@@ -18,74 +18,124 @@ import datetime
 from cuip import __version__
 from cuip.cuip.utils import cuiplogger
 
-logger = cuiplogger.cuipLogger(loggername="wu_scraper", tofile=False)
-URL_TEMPLATE = "http://www.wunderground.com/weatherstation/WXDailyHistory.asp?ID={pwsid}&day={day}&month={month}&year={year}&graphspan=day&format=1"
 
+class Weather(object):
 
-def get_weather(year, month, day, pwsid="KNYNEWYO116"):
-    """
-    Grab the weather data from Weather Underground
+    def __init__(self):
+        """
+        Parameters
+        ----------
+        pwsid: str
+            weather underground's station id
+        """
+        self.station_url = "http://www.wunderground.com/weatherstation/WXDailyHistory.asp?ID={pwsid}&day={day}&month={month}&year={year}&graphspan=day&format=1"
+        self.airport_url = "https://www.wunderground.com/history/airport/{airport}/{year}/{month}/{day}/DailyHistory.html?format=1"
+        self.logger = cuiplogger.cuipLogger(loggername="wu_scraper", tofile=False)
 
-    Parameters
-    ----------
-    year : int
-    month : int
-    day : int
-    pwsid : str 
+    def get_weather(self, year, month, day, pwsid="KNYNEWYO116", airport="kjfk"):
+        """
+        Grab the weather data from Weather Underground
+        
+        Parameters
+        ----------
+        year : int
+        month : int
+        day : int
+        pwsid : str
+        weather underground's personal weather station id
         the default value is "KNYNEWYO116" for BoreumHill NYC
+        airport: str
+        airport code prefixed by 'k'. default is 'kjfk'. This 
+        is used for obtaining visibility
+        Returns
+        -------
+        Pandas DataFrame containing weather data for particular day.
+        """
+        # Create urls
+        station_url  = self.station_url.format(pwsid=pwsid, year=year, month=month, day=day)
+        airport_url  = self.airport_url.format(airport=airport, year=year, month=month, day=day)
+        
+        # weather underground keeps changing Airport time column name as one of the following
+        air_time_cols = ["TimeEDT", "TimeEST", "Time"]
 
-    Returns
-    ------
-    Pandas DataFrame containing weather data for particular day.
-    """
+        def airport_dateparser(dt):
+            """
+            Parse column with date and time from airport weather information
+            """
+            hh = datetime.datetime.strptime(dt, '%I:%M %p').strftime('%H')
+            mm = datetime.datetime.strptime(dt, '%I:%M %p').strftime('%M')
+            return datetime.datetime.combine(datetime.date(year, month, day), 
+                                             datetime.time(int(hh), int(mm)))
+        # fetch weather data
+        station_cols = pd.read_csv(station_url, nrows=1).columns                                                                                                   
+        station_data = pd.read_csv(station_url, names=station_cols[:-1], 
+                                   usecols=station_cols[:-1], parse_dates=["Time"], 
+                                   infer_datetime_format=True)
+        airport_cols = pd.read_csv(airport_url, nrows=1).columns
+        time_col_name = set(air_time_cols).intersection(airport_cols).pop()
+        airport_data = pd.read_csv(airport_url, names=airport_cols[:-1], 
+                                   usecols=airport_cols[:-1], parse_dates=[time_col_name], 
+                                   infer_datetime_format=False, date_parser=airport_dateparser, 
+                                   skiprows=2)
 
-    url = URL_TEMPLATE.format(pwsid=pwsid, year=year, month=month, day=day)
-    cols = pd.read_csv(url, nrows=1).columns
-    data = pd.read_csv(url, names=cols[:-1], header=False, skiprows=1, usecols=cols[:-1])
-    return data[::2].set_index(['Time'])
+        # convert string timestamp to datetime
+        station_data = station_data[1::2]
+        station_data['Time'] = pd.to_datetime(station_data['Time'])
+        airport_data.rename(columns={time_col_name: 'Time'}, inplace=True)
+        
+        # merge weather station data with airport weather data
+        weather_with_visibility = pd.merge_asof(station_data, 
+                                                airport_data[['Time', 'VisibilityMPH']], 
+                                                left_on='Time', right_on='Time', 
+                                                tolerance=pd.Timedelta('59minutes'))
+        return weather_with_visibility
 
-
-def write_weather(data, fname):
-    """
-    Write the weather data to a database.
-    This will currently create a csv file. 
-    In the final implementations, it will push data
-    to csv file.
-
-    Paramters
-    ---------
-    data : pd.DataFrame
-    fname: str
+    def write_weather(self, data, fname):
+        """
+        Write the weather data to a database.
+        This will currently create a csv file. 
+        In the final implementations, it will push data
+        to csv file.
+        
+        Paramters
+        ---------
+        data : pd.DataFrame
+        fname: str
         Name and path of the file to write the data
+        
+        Returns
+        -------
+        None
+        """
 
-    Returns
-    -------
-    None
-    """
-
-    # Place-holder to write the weather data to a database
-    data.to_csv(fname, encoding='utf-8')
-    logger.info("Written weather data to: " + str(fname))
+        # place-holder to write the weather data to a database
+        data.to_csv(fname, encoding='utf-8')
+        self.logger.info("Written weather data to: " + str(fname))
 
 
-def weather_today(pwsid="KNYNEWYO116"):
-    """
-    Print current weather information
-
-    Parameters
-    ----------
-    pwsid : str 
+    def weather_today(self, pwsid="KNYNEWYO116", airport="kjfk"):
+        """
+        Print current weather information
+        
+        Parameters
+        ----------
+        pwsid : str
+        weather underground's personal weather station id
         the default value is "KNYNEWYO116" for BoreumHill NYC
-
-    Returns
-    -------
-    None
-    """
-    now = datetime.datetime.now()
-    current_weather = get_weather(year=now.year, month=now.month, day=now.day, pwsid=pwsid)
-    for i in current_weather.columns:
-        print("{col: <25} {info}".format(col=i, info=current_weather[i][-1]))
-
+        airport: str
+        airport code prefixed by 'k'. default is 'kjfk'. This
+        is used for obtaining visibility
+        
+        Returns
+        -------
+        None
+        """
+        now = datetime.datetime.now()
+        current_weather = self.get_weather(year=now.year, month=now.month, 
+                                           day=now.day, pwsid=pwsid, 
+                                           airport=airport)
+        for i in current_weather.columns:
+            print("{col: <25} {info}".format(col=i, info=current_weather[i][-1]))
 
 def _parse_args(args):
     """
@@ -112,7 +162,8 @@ def _parse_args(args):
         "--today",
         action='store_true',
         dest='today',
-        help="Get current weather information")
+        help="""Get current weather information. Therer is a bug with 
+Weather underground's reporting system so don't use it between midnight and 2 am.""")
     parser.add_argument(
         "-w",
         "--write",
@@ -162,6 +213,16 @@ def _parse_args(args):
         type=str,
         help="personal weather station id"
     )
+    parser.add_argument(
+        "-a",
+        "--air",
+        action='store',
+        dest='airport',
+        default="KJFK",
+        type=str,
+        help="airport id prefixed with k. eg. kjfk"
+    )
+
     if len(args) == 0:
         parser.print_help()
         sys.exit(1)
@@ -169,17 +230,26 @@ def _parse_args(args):
 
 
 def main(args):
-    logger.info("Starting wu_scraper")
-    arg = _parse_args(args)
+    print("Starting wu_scraper")
+    weather_obj = Weather()
+    arg         = _parse_args(args)
+    
     if arg.today:
-        weather_today(arg.pwsid)
+        weather_obj.weather_today(arg.pwsid, arg.airport)
     elif arg.write_switch:
-        w = get_weather(year=arg.year,
-                        month=arg.month,
-                        day=arg.day,
-                        pwsid=arg.pwsid)
-        write_weather(w, arg.csvname)
-
+        weather = weather_obj.get_weather(year    = arg.year,
+                                          month   = arg.month,
+                                          day     = arg.day,
+                                          pwsid   = arg.pwsid,
+                                          airport = arg.airport)
+        weather_obj.write_weather(w, arg.csvname)
+    else:
+        with pd.option_context('display.max_rows', 999, 'display.max_columns', 7):
+            print(weather_obj.get_weather(year    = arg.year,
+                                          month   = arg.month,
+                                          day     = arg.day,
+                                          pwsid   = arg.pwsid,
+                                          airport = arg.airport))
 
 def run():
     main(sys.argv[1:])
