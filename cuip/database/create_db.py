@@ -8,7 +8,7 @@ from cuip.cuip.utils import cuiplogger
 
 # Logger
 logger = cuiplogger.cuipLogger(loggername="DATABASE", tofile=False)
-INPATH = '/projects/cusp/10101/0/'
+INPATH = '/uofs50tb_gpfs/archive/uods1311/'
 
 
 class Worker(multiprocessing.Process):
@@ -39,8 +39,14 @@ fname varchar NOT NULL,
 fpath varchar NOT NULL, 
 mean REAL NOT NULL, 
 std REAL NOT NULL, 
-bright INT NOT NULL, 
-time timestamp with time zone PRIMARY KEY NOT NULL);
+bright_pix INT NOT NULL, 
+timestamp timestamp with time zone PRIMARY KEY NOT NULL,
+visibility REAL NOT NULL,
+weather varchar NOT NULL,
+xoffset INT NOT NULL,
+yoffset INT NOT NULL,
+angle REAL NOT NULL
+);
 ''')
             self.conn.commit()
 
@@ -68,7 +74,7 @@ time timestamp with time zone PRIMARY KEY NOT NULL);
         return
 
 
-class AddEntry(object):
+class AddFile(object):
 
     def __init__(self, fgen):
         self.fgen = fgen
@@ -80,17 +86,16 @@ class AddEntry(object):
        conn = connection
        cur = conn.cursor()
        try:
-          for f in self.fgen:
-              logger.info("Adding %s to Database"%(str(f)))
-              proc_query = "INSERT INTO lightscape (gid, fname, fpath, mean, std, bright, time) VALUES (0, %s, %s, 0, 0, 0, %s);"
-              cur.execute(proc_query, (os.path.basename(f), os.path.dirname(f), datetime.fromtimestamp(os.path.getmtime(f))))
+           for f in self.fgen:
+               logger.info("Adding %s to Database"%(str(f)))
+               proc_query = "INSERT INTO lightscape (gid, fname, fpath, mean, std, bright_pix, timestamp, visibility, weather, xoffset, yoffset, angle) VALUES (0, %s, %s, 0, 0, 0, %s, 0, %s, 0, 0, 0);"
+               cur.execute(proc_query, (os.path.basename(f), os.path.dirname(f), datetime.fromtimestamp(os.path.getmtime(f)), "NA"))
        except psycopg2.IntegrityError:
            # Found Duplicate Entry.. Do Nothing
            logger.warning(str(f)+" already exists")
            conn.rollback()
        finally:
            conn.commit()
-       
 
 #fgen = getFiles(INPATH, s_date.strftime("%Y.%m.%d"), s_date.strftime("%H.%M.%S"), 
 #                e_date.strftime("%Y.%m.%d"), e_date.strftime("%H.%M.%S"))
@@ -148,9 +153,9 @@ if __name__ == "__main__":
             tasks.put(None)
 
     # Enqueue job
-    start_date = "2013.11.16"
-    start_time = "23.59.59"
-    end_date   = "2013.11.17"
+    start_date = "2014.01.01"
+    start_time = "00.00.01"
+    end_date   = "2014.12.31"
     end_time   = "23.59.59"
     s_datetime  = datetime(*map(int, start_date.split('.') + start_time.split('.') ))
     e_datetime  = datetime(*map(int, end_date.split('.') + end_time.split('.') ))
@@ -159,10 +164,11 @@ if __name__ == "__main__":
     #num_jobs = len(files_gen_list)
 
     try:
+        # adding new file entry
         for gens in files_gen_list:
             filelist = [f for f in gens]
-            tasks.put(AddEntry(filelist))
-
+            tasks.put(AddFile(filelist))
+        # updating weather entry
     finally:
         poisonChildren()
         tasks.join()

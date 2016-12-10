@@ -93,10 +93,10 @@ def _pathrange(basepath, start, end, delta):
         curr += delta
         """
 
-def _get_files(path, start_date, start_time, end_date, end_time):
+def _get_files(path, start_datetime, end_datetime):
     """
-    Fetch all files between `start_date`, `start_time` and
-    `end_date`, `end_time`
+    Fetch all files between `start_datetime`, and
+    `end_datetime`
     .. note: Use this only if database of files does not exist.
              If database exists, use get_files method
     Parameters
@@ -106,19 +106,14 @@ def _get_files(path, start_date, start_time, end_date, end_time):
         .. note: This should be the root dir from where the
                  directory structure looks like 
                  `YYYY/MM/DD/HH.MM.SS/file`
-    start_date: str
-    end_date: str
-        format: YYYY.MM.DD
-    start_time: str
-    end_time: str
-        format: HH.MM.SS
+    start_datetime: `datetime.datetime`
+        start datetime from which to get the files
+    end_datetime: `datetime.datetime`
+        end datetime until which to get the files
     """
-    st  = datetime(*[int(i) for i in start_date.split(".") + start_time.split(".")])
-    end = datetime(*[int(i) for i in end_date.split(".") + end_time.split(".")])
-
-    paths = pathrange(os.path.abspath(path), 
-                      st, end, timedelta(seconds=1))
-
+    paths = _pathrange(os.path.abspath(path), 
+                      start_datetime, end_datetime, 
+                      timedelta(seconds=1))
     try:
         while True:
             next_path = paths.next()
