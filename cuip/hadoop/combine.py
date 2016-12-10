@@ -11,31 +11,10 @@ from datetime import datetime, timedelta
 from itertools import islice
 from scipy.ndimage import imread 
 from cuip.cuip.utils import cuiplogger
-from cuip.cuip.utils.misc import get_files
+from cuip.cuip.utils.misc import get_files, _get_files
 
 # initialize logger
 logger = cuiplogger.cuipLogger(loggername="BATCH", tofile=False)
-
-
-def groupFiles(n, gf):
-    """
-    Return path for `n` files in a list
-    Parameters
-    ----------
-    n: int
-        number of files to return in a list
-    gf: `generator`
-        generator containing all the file paths
-
-    Returns
-    -------
-    flist: list
-        list of n file paths
-    """
-    flist =  []
-    for i in range(n):
-        flist.append(gf.next())
-    return flist
 
 
 class Worker(multiprocessing.Process):
@@ -119,7 +98,7 @@ class StackImages(object):
                 img_arr[lo:hi] = np.fromfile(tfile, dtype=np.uint8) \
                     .reshape(nrow, ncol, nwav)[::fac, ::fac]
             else:
-                logger.error("File Format not supported "+str(imgs))
+                logger.error("File Format not supported "+str(tfile))
 
         # rename the extension of the file to .raw
         newfname = str(os.path.getmtime(tfile))+".raw"
@@ -129,54 +108,28 @@ class StackImages(object):
         img_arr.tofile(os.path.join(outpath, newfname))
 
 
-
 if __name__ == "__main__":
+    # setting up threadsafe tasks and results queue
+    tasks   = multiprocessing.JoinableQueue()
+    results = multiprocessing.Queue()
 
     # set input and output paths
-    INPATH  = os.environ("CUIP_2013")
-    OUTPATH = "output/combined_images"
+    inpath  = os.getenv("CUIP_2013")
+    outpath = "output/combined_images"
+    dbname  = os.getenv("CUIP_DBNAME")
 
     # set start and end times
     st_date = "2013.11.17"
     st_time = "17.00.00"
     en_date = "2013.11.17"
-    en_time = "23.59.59"
+    en_time = "17.59.59"
 
     st = datetime(*[int(i) for i in st_date.split(".") + st_time.split(".")])
     en = datetime(*[int(i) for i in en_date.split(".") + en_time.split(".")])
-
-    # set the number of imaging hours for each task
-    delta_t = 1
-
-    # construct a list of file list generators
-    files_gen_list = []
-
-    while True:
-        start_next = st + timedelta(hours=delta_t)
-        if start_next <= en:
-            # range is between current time interation and +delta_t hours
-            files_gen_list.append(
-                get_files(INPATH, 
-                         st.strftime("%Y.%m.%d"), st.strftime("%H.%M.%S"), 
-                         start_next.strftime("%Y.%m.%d"), 
-                         start_next.strftime("%H.%M.%S"))
-                )
-            st += timedelta(hours=delta_t)
-        else:
-            # range is between current time iteration and end
-            files_gen_list.append(
-                get_files(INPATH, 
-                         st.strftime("%Y.%m.%d"), st.strftime("%H.%M.%S"), 
-                         en.strftime("%Y.%m.%d"), en.strftime("%H.%M.%S"))
-                )
-            break
-
-    tasks   = multiprocessing.JoinableQueue()
-    results = multiprocessing.Queue()
     
     # Files to be comined together
     combine = 64
-    fac     = 8
+    fac     = 4
 
     # File shapes
     nrow = 2160
@@ -198,26 +151,29 @@ if __name__ == "__main__":
         # Add a poison pill for each worker
         for i in range(num_workers):
             tasks.put(None)
-    
+            
     # put jobs (tasks) in queue
-    num_jobs = len(files_gen_list)
     try:
-        for gens in files_gen_list:
-            while True:
-                filelist = [z for z in islice(gens, combine)]
-                if filelist:
-                    tasks.put(StackImages(comb_imgs, filelist, fac, nrow, 
-                                          ncol, nwav, OUTPATH))
-                else:
-                    logger.info("Tasks Added")
-                    break
+        file_list = []
+        # first try to get files from database
+        if dbname:
+            logger.info("Fetching file locations from database")
+            file_list = get_files(dbname, st, en)
+        else:
+            logger.warning("Database not found. Process continue by scanning filesystem")
+            logger.warning("This might take longer")
+            # get files by scanning the file system
+            file_gen_list = _get_files(inpath, st, en)
+            for all_files in file_gen_list:
+                file_list.append(all_files)
+        # group of 'combine' files
+        files = zip(*(iter(file_list),) * combine)
+        for n_files in files:
+            tasks.put(StackImages(comb_imgs, n_files, 
+                                  fac, nrow, ncol, nwav,
+                                  outpath))
+        logger.info("All Tasks Added")
     finally:
         poisonChildren()
         # Wait for all of the tasks to finish
         tasks.join()
-    
-    # Start printing results
-    #while num_jobs:
-    #    result = results.get()
-    #    print 'Result:', result
-    #    num_jobs -= 1
