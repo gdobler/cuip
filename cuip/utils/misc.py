@@ -1,12 +1,47 @@
 import os
+import psycopg2
 from datetime import datetime, timedelta
 from cuip.cuip.utils import cuiplogger
 logger = cuiplogger.cuipLogger(loggername="MISC", tofile=False)
 
-def pathrange(basepath, start, end, delta):
+
+def get_files(dbname, start_datetime, end_datetime):
+    """
+    Fetch all files between `start_datetime`, and
+    `end_datetime` from database `dbname`
+    .. note: If database of filenames does not exist,
+             use _get_files method.
+    Parameters
+    ----------
+    dbname: str
+        postgres database name
+    start_datetime: `datetime.datetime`
+        start datetime from which to get the files
+    end_datetime: `datetime.datetime`
+        end datetime until which to get the files
+    Returns
+    -------
+    files: list
+        list of absolute paths of the files
+    """
+    conn   = psycopg2.connect("dbname='%s'"%(dbname))
+    cur    = conn.cursor()
+    querry = "SELECT fname, fpath \
+              FROM lightscape     \
+              WHERE timestamp     \
+              BETWEEN %(start)s and %(end)s;"
+    cur.execute(querry, {'start': start_datetime, 
+                         'end'  : end_datetime})
+    rows   = cur.fetchall()
+    # join filename with filepath
+    files  = map(lambda x: os.path.join(x[1], x[0]), rows)
+    return files
+
+def _pathrange(basepath, start, end, delta):
     """
     Generate paths for datetime between `start` and `end`
     in the `YYYY/MM/DD/HH.MM.SS` format
+    .. note: Use this only if database of files does not exist
     Parameters
     ----------
     basepath: str
@@ -22,17 +57,24 @@ def pathrange(basepath, start, end, delta):
     curr = start
     try:
         while curr < end:
-            next_path = "{path}/{year}/{month:0>2}/{day:0>2}/{hour:0>2}.{minute:0>2}.{second:0>2}".format(path = basepath,
-                                                                                                          year = curr.year,
-                                                                                                          month = curr.month,
-                                                                                                          day = curr.day,
-                                                                                                          hour = curr.hour,
-                                                                                                          minute = curr.minute,
-                                                                                                          second = curr.second)
-            if os.path.exists(next_path):
-                yield next_path
+            # Only proceed if path with year/month/day exists
+            if os.path.exists("{path}/{year}/{month:0>2}/{day:0>2}".format(path = basepath, 
+                                                                           year = curr.year, 
+                                                                           month = curr.month, 
+                                                                           day = curr.day)):
+                next_path = "{path}/{year}/{month:0>2}/{day:0>2}/{hour:0>2}.{minute:0>2}.{second:0>2}".format(path = basepath,
+                                                                                                              year = curr.year,
+                                                                                                              month = curr.month,
+                                                                                                              day = curr.day,
+                                                                                                              hour = curr.hour,
+                                                                                                              minute = curr.minute,
+                                                                                                              second = curr.second)
+                if os.path.exists(next_path):
+                    yield next_path
                 
-            curr += delta
+                curr += delta
+            else:
+                curr += timedelta(days=1)
     except Exception as ex:
         logger.error("Error in path_range: "+str(ex))
 
@@ -51,10 +93,12 @@ def pathrange(basepath, start, end, delta):
         curr += delta
         """
 
-def get_files(path, start_date, start_time, end_date, end_time):
+def _get_files(path, start_date, start_time, end_date, end_time):
     """
     Fetch all files between `start_date`, `start_time` and
     `end_date`, `end_time`
+    .. note: Use this only if database of files does not exist.
+             If database exists, use get_files method
     Parameters
     ----------
     path: str
@@ -69,16 +113,11 @@ def get_files(path, start_date, start_time, end_date, end_time):
     end_time: str
         format: HH.MM.SS
     """
-    s_year, s_month, s_day = start_date.split('.')
-    s_hour, s_min, s_sec = start_time.split('.')
-    e_year, e_month, e_day = end_date.split('.')
-    e_hour, e_min, e_sec = end_time.split('.')
+    st  = datetime(*[int(i) for i in start_date.split(".") + start_time.split(".")])
+    end = datetime(*[int(i) for i in end_date.split(".") + end_time.split(".")])
 
     paths = pathrange(os.path.abspath(path), 
-                      datetime(int(s_year), int(s_month), int(s_day), int(s_hour), int(s_min), int(s_sec)), 
-                      datetime(int(e_year), int(e_month), int(e_day), int(e_hour), int(e_min), int(e_sec)), 
-                      timedelta(seconds=1)
-                      )
+                      st, end, timedelta(seconds=1))
 
     try:
         while True:
