@@ -3,21 +3,20 @@ import os
 import time
 import multiprocessing
 from datetime import datetime, timedelta
-from cuip.cuip.utils.misc import get_files
+from cuip.cuip.utils.misc import _get_files
 from cuip.cuip.utils import cuiplogger
 
 # Logger
 logger = cuiplogger.cuipLogger(loggername="DATABASE", tofile=False)
-INPATH = '/uofs50tb_gpfs/archive/uods1311/'
 
 
 class Worker(multiprocessing.Process):
 
-    def __init__(self, task_queue, result_queue):
+    def __init__(self, dbname, task_queue, result_queue):
         multiprocessing.Process.__init__(self)
         self.task_queue = task_queue
         self.result_queue = result_queue
-        self.conn = psycopg2.connect("dbname='uosdr'")
+        self.conn = psycopg2.connect("dbname='%s'"%(dbname))
         cur = self.conn.cursor()
         self.initialize_table()
         
@@ -27,27 +26,27 @@ class Worker(multiprocessing.Process):
         ..note: If the table exists, it will not perform any action
         """
         cur = self.conn.cursor()
-        cur.execute("select exists(select * from information_schema.tables where table_name=%s)", ('lightscape',))
+        cur.execute("select exists(SELECT * FROM information_schema.tables \
+                    WHERE table_name=%s)", ('lightscape',))
         if not cur.fetchone()[0]:
             # Table does not exist
             logger.warning("Creating New Table")
-            cur.execute('''
-CREATE TABLE lightscape
-(id SERIAL,
-gid INT NOT NULL, 
-fname varchar NOT NULL, 
-fpath varchar NOT NULL, 
-mean REAL NOT NULL, 
-std REAL NOT NULL, 
-bright_pix INT NOT NULL, 
-timestamp timestamp with time zone PRIMARY KEY NOT NULL,
-visibility REAL NOT NULL,
-weather varchar NOT NULL,
-xoffset INT NOT NULL,
-yoffset INT NOT NULL,
-angle REAL NOT NULL
-);
-''')
+            cur.execute(" \
+                       CREATE TABLE lightscape \
+                       (id SERIAL, \
+                       gid INT NOT NULL, \
+                       fname varchar NOT NULL, \
+                       fpath varchar NOT NULL, \
+                       mean REAL NOT NULL, \
+                       std REAL NOT NULL, \
+                       bright_pix INT NOT NULL, \
+                       timestamp timestamp with time zone PRIMARY KEY NOT NULL, \
+                       visibility REAL NOT NULL, \
+                       weather varchar NOT NULL, \
+                       xoffset INT NOT NULL, \
+                       yoffset INT NOT NULL, \
+                       angle REAL NOT NULL); \
+                       ")
             self.conn.commit()
 
     def reset_table(self):
@@ -85,20 +84,29 @@ class AddFile(object):
        """
        conn = connection
        cur = conn.cursor()
-       try:
-           for f in self.fgen:
+       for f in self.fgen:
+           try:
                logger.info("Adding %s to Database"%(str(f)))
-               proc_query = "INSERT INTO lightscape (gid, fname, fpath, mean, std, bright_pix, timestamp, visibility, weather, xoffset, yoffset, angle) VALUES (0, %s, %s, 0, 0, 0, %s, 0, %s, 0, 0, 0);"
-               cur.execute(proc_query, (os.path.basename(f), os.path.dirname(f), datetime.fromtimestamp(os.path.getmtime(f)), "NA"))
-       except psycopg2.IntegrityError:
-           # Found Duplicate Entry.. Do Nothing
-           logger.warning(str(f)+" already exists")
-           conn.rollback()
-       finally:
-           conn.commit()
+               proc_query = "INSERT INTO lightscape ( \
+                             gid, fname, fpath, mean, \
+                             std, bright_pix, timestamp, \
+                             visibility, weather, xoffset, \
+                             yoffset, angle) \
+                             VALUES (0, %s, %s, 0, \
+                             0, 0, %s, \
+                             0, %s, 0, \
+                             0, 0);"
+               cur.execute(proc_query, (os.path.basename(f), 
+                                        os.path.dirname(f), 
+                                        datetime.fromtimestamp(os.path.getmtime(f)), 
+                                        "NA"))
+           except psycopg2.IntegrityError:
+               # Found Duplicate Entry.. Do Nothing
+               logger.warning(str(f)+" already exists")
+               conn.rollback()
+       # Commit all the changes
+       conn.commit()
 
-#fgen = getFiles(INPATH, s_date.strftime("%Y.%m.%d"), s_date.strftime("%H.%M.%S"), 
-#                e_date.strftime("%Y.%m.%d"), e_date.strftime("%H.%M.%S"))
 
 def get_file_generators(inpath, start_datetime, end_datetime, incr=1):
    """
@@ -120,29 +128,31 @@ def get_file_generators(inpath, start_datetime, end_datetime, incr=1):
        if start_next <= end_datetime:
            # range is between current time interation and +incr hours
            files_gen_list.append(
-               get_files(INPATH,
-                         start_datetime.strftime("%Y.%m.%d"), start_datetime.strftime("%H.%M.%S"),
-                         start_next.strftime("%Y.%m.%d"), start_next.strftime("%H.%M.%S"))
-               )
+               _get_files(inpath,
+                         start_datetime,
+                         start_next))
            start_datetime += timedelta(hours=incr)
        else:
            # range is between current time iteration and end
            files_gen_list.append(
-               get_files(INPATH,
-                         start_datetime.strftime("%Y.%m.%d"), start_datetime.strftime("%H.%M.%S"),
-                         end_datetime.strftime("%Y.%m.%d"), end_datetime.strftime("%H.%M.%S"))
-               )
+               _get_files(inpath,
+                         start_datetime,
+                         end_datetime))
            break
    return files_gen_list
 
 if __name__ == "__main__":
+    inpath = os.getenv("CUIP_2013")
+    dbname = os.getenv("CUIP_DBNAME")
+
+    # threadsafe queues for adding tasks and collecting results
     tasks = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
   
-    # Start consumers
+    # start workers
     num_workers = 1
     logger.info('Creating %d Workers' % num_workers)
-    workers = [ Worker(tasks, results)
+    workers = [ Worker(dbname, tasks, results)
                 for i in xrange(num_workers) ]
     for w in workers:
         w.start()
@@ -153,15 +163,14 @@ if __name__ == "__main__":
             tasks.put(None)
 
     # Enqueue job
-    start_date = "2014.01.01"
-    start_time = "00.00.01"
-    end_date   = "2014.12.31"
-    end_time   = "23.59.59"
+    start_date  = "2013.11.17"
+    start_time  = "00.00.01"
+    end_date    = "2013.11.17"
+    end_time    = "00.09.59"
     s_datetime  = datetime(*map(int, start_date.split('.') + start_time.split('.') ))
     e_datetime  = datetime(*map(int, end_date.split('.') + end_time.split('.') ))
 
-    files_gen_list = get_file_generators(INPATH, s_datetime, e_datetime)
-    #num_jobs = len(files_gen_list)
+    files_gen_list = get_file_generators(inpath, s_datetime, e_datetime)
 
     try:
         # adding new file entry
