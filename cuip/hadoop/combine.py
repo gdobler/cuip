@@ -93,6 +93,10 @@ if __name__ == "__main__":
     else:
         nout_per_proc = nout//nproc + 1
 
+    # -- alert the user
+    logger.info("combining {0} input files into {1} output files." \
+                    .format(nin,nout))
+
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     
