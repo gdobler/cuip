@@ -51,9 +51,9 @@ if __name__ == "__main__":
         
     # set start and end times
     st_date = "2013.11.17"
-    st_time = "17.00.00"
+    st_time = "15.00.00"
     en_date = "2013.11.17"
-    en_time = "17.59.59"
+    en_time = "23.59.59"
 
     st = datetime(*[int(i) for i in st_date.split(".") + st_time.split(".")])
     en = datetime(*[int(i) for i in en_date.split(".") + en_time.split(".")])
@@ -66,6 +66,7 @@ if __name__ == "__main__":
         logger.warning("Database not found. Process continue by scanning filesystem")
         logger.warning("This might take longer")
         # get files by scanning the file system 
+        file_list = []
         file_gen_list = _get_files(inpath, st, en)
         for all_files in file_gen_list:
             file_list.append(all_files)
@@ -81,7 +82,7 @@ if __name__ == "__main__":
     flist_out = [file_list[i*nimg_per_file:(i+1)*nimg_per_file] for i in range(nout)]
 
     # -- set the number of processors
-    nproc = 3
+    nproc = 16
     logger.info("Creating %s worker processes"%(nproc))
 
     # -- set the number of files per processor
