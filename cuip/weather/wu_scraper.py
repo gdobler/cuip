@@ -6,6 +6,7 @@ import pandas as pd
 import datetime
 import multiprocessing
 import itertools
+from sqlalchemy import create_engine
 from cuip.cuip.utils import cuiplogger
 
 
@@ -102,14 +103,85 @@ class Weather(object):
                               "-".join([year, month, day])+
                               " "+str(ex))
 
+    def remove_dups(self, df, tablename, engine, dup_cols=[]):
+        """
+        Remove rows from a dataframe that already exist in a database
+        https://github.com/ryanbaumann/Pandas-to_sql-upsert/blob/master/to_sql_newrows.py
+        Parameters
+        ----------
+        df: pandas.DataFrame
+            dataframe to remove duplicate rows from
+        engine: SQLAlchemy engine object
+        tablename: str
+            tablename to check duplicates in
+        dup_cols: list or tuple 
+            column name(s) to check for duplicate row values
+        Returns
+        -------
+        Unique list of values from dataframe compared to database table
+        """
+        args = 'SELECT %s FROM %s' %(', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)            
+        df.drop_duplicates(dup_cols, keep='last', inplace=True)
+        df = pd.merge(df, pd.read_sql(args, engine), how='left', on=dup_cols, indicator=True)
+        df = df[df['_merge'] == 'left_only']
+        df.drop(['_merge'], axis=1, inplace=True)
+        self.logger.info("Dropped {dup} duplicates".format(dup=df.shape[0]))
+        return df
+
+    def to_database(self, dbname=None, tablename=None, dataframe=None):
+        """
+        Add dataframe to database
+        """
+        engine = create_engine('postgresql:///%s'%dbname)
+        conn = engine.connect()
+        def _initialize_table(conn, tablename=None):
+            """
+            Create table schema and commit
+            Parameters
+            ----------
+            conn: sql alchemy connection
+            tablename: name of the weather table
+            ..note: If the table exists, it will not perform any action
+            """
+            # create table if it doesn't exist
+            if not conn.execute("select exists(SELECT * FROM information_schema.tables WHERE table_name=%s)", 
+                                (tablename,)).fetchone()[0]:
+                self.logger.warning("Creating New Table")
+                conn.execute('CREATE TABLE weather \
+                              ("Time" timestamp without time zone PRIMARY KEY NOT NULL, \
+                              "TemperatureF" REAL, \
+                              "Dew PointF" REAL, \
+                              "Humidity" REAL, \
+                              "Sea Level PressureIn" REAL, \
+                              "VisibilityMPH" REAL, \
+                              "Wind Direction" varchar(15), \
+                              "Wind SpeedMPH" REAL, \
+                              "Gust SpeedMPH" REAL, \
+                              "PrecipitationIn" REAL, \
+                              "Events" varchar(20), \
+                              "Conditions" varchar(20), \
+                              "WindDirDegrees" REAL);'
+                             )
+        # Initialize DB
+        _initialize_table(conn, tablename)
+        # Remove duplicates from dataframe
+        df = self.remove_dups(df=dataframe, tablename=tablename, 
+                              engine=conn, dup_cols=['Time'])
+        # Write it to the database
+        self.logger.info("Writing to {new} entries to database".format(new=df.shape[0]))
+        df.replace(['-', '\s+'], np.nan, regex=True)
+        df.set_index(["Time"], inplace=True)
+        df.to_sql(tablename, engine, if_exists='append')
+
 
 if __name__ == "__main__":
     weather = Weather()
     pwsid   = "KNYNEWYO116"
     airport = "KNYC"
+    dbname  = os.getenv("CUIP_WEATHER_DBNAME")
     # set start and end date ranges
     st_date = "2016.01.01"
-    en_date = "2016.01.05"
+    en_date = "2016.01.02"
     # create empty dataframes for storing results
     station_data = airport_data = weather_with_visibility = pd.DataFrame()
     # setting up pool of workers
@@ -124,7 +196,7 @@ if __name__ == "__main__":
     for date in date_range:
         airport_data = airport_data.append(weather.from_airport(date.year, date.month, date.day, "KNYC"))
         # station_data = station_data.append(weather.from_weather_station(date.year, date.month, date.day, "KNYNEWYO116"))
-
+    weather.to_database(dbname, "weather", airport_data)
     """
     # sorting data
     airport_data.sort(["Time"], inplace=True)
