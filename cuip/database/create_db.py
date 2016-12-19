@@ -2,6 +2,7 @@ import psycopg2
 import os
 import time
 import multiprocessing
+from psycopg2.extensions import AsIs
 from datetime import datetime, timedelta
 from cuip.cuip.utils.misc import _get_files
 from cuip.cuip.utils import cuiplogger
@@ -27,12 +28,12 @@ class Worker(multiprocessing.Process):
         """
         cur = self.conn.cursor()
         cur.execute("select exists(SELECT * FROM information_schema.tables \
-                    WHERE table_name=%s)", ('lightscape',))
+                    WHERE table_name=%s)", ('uo_files',))
         if not cur.fetchone()[0]:
             # Table does not exist
             logger.warning("Creating New Table")
             cur.execute(" \
-                       CREATE TABLE lightscape \
+                       CREATE TABLE  uo_files\
                        (id SERIAL, \
                        gid INT NOT NULL, \
                        fname varchar NOT NULL, \
@@ -40,7 +41,7 @@ class Worker(multiprocessing.Process):
                        mean REAL NOT NULL, \
                        std REAL NOT NULL, \
                        bright_pix INT NOT NULL, \
-                       timestamp timestamp with time zone PRIMARY KEY NOT NULL, \
+                       timestamp timestamp without time zone PRIMARY KEY NOT NULL, \
                        visibility REAL NOT NULL, \
                        weather varchar NOT NULL, \
                        xoffset INT NOT NULL, \
@@ -55,9 +56,15 @@ class Worker(multiprocessing.Process):
         the table itself
         """
         cur = self.conn.cursor()
-        cur.execute("DELETE FROM LIGHTSCAPE")
-        cur.execute("DROP TABLE LIGHTSCAPE")
+        cur.execute("DELETE FROM uo_files")
+        cur.execute("DROP TABLE uo_files")
         conn.commit()
+
+    def get_columns(self):
+        cur = self.conn.cursor()
+        cur.execute("SELECT * FROM uo_files LIMIT 0")
+        colnames = [desc[0] for desc in cur.description]
+        return colnames
 
     def run(self):
         proc_name = self.name
@@ -67,7 +74,8 @@ class Worker(multiprocessing.Process):
                 logger.info("%s: Exiting"%(proc_name))
                 self.task_queue.task_done()
                 break
-            answer = next_task(connection=self.conn)
+            answer = next_task(connection=self.conn, 
+                               colnames=self.get_columns)
             self.task_queue.task_done()
             self.result_queue.put(answer)
         return
@@ -78,7 +86,7 @@ class AddFile(object):
     def __init__(self, fgen):
         self.fgen = fgen
 
-    def __call__(self, connection=None):
+    def __call__(self, connection=None, colnames=None):
        """
        Add entry to the database
        """
@@ -87,7 +95,7 @@ class AddFile(object):
        for f in self.fgen:
            try:
                logger.info("Adding %s to Database"%(str(f)))
-               proc_query = "INSERT INTO lightscape ( \
+               proc_query = "INSERT INTO uo_files ( \
                              gid, fname, fpath, mean, \
                              std, bright_pix, timestamp, \
                              visibility, weather, xoffset, \
@@ -98,14 +106,59 @@ class AddFile(object):
                              0, 0);"
                cur.execute(proc_query, (os.path.basename(f), 
                                         os.path.dirname(f), 
-                                        datetime.fromtimestamp(os.path.getmtime(f)), 
-                                        "NA"))
+                                        datetime.fromtimestamp(os.path.getmtime(f)).\
+                                            replace(microsecond=0), "NA"))
            except psycopg2.IntegrityError:
                # Found Duplicate Entry.. Do Nothing
                logger.warning(str(f)+" already exists")
                conn.rollback()
        # Commit all the changes
        conn.commit()
+
+
+class UpdateFileEntry(object):
+    
+    def __init__(self, timestamp=None, 
+                 filename=None, filepath=None, **kwargs):
+        """
+        Parameters
+        ----------
+        timestamp: `datetime.datetime`, optional
+        filename: str
+        filepath: str
+            absolute path of the file
+        **kwargs: key value pair of fields to
+            be updated
+        .. note: Either timestamp of filename & filepath must
+                 be provided
+        """
+        self.timestamp = timestamp.replace(microsecond=0)
+        self.fname     = filename
+        self.fpath     = filepath
+        self.kwargs    = kwargs
+
+    def __call__(self, connection=None, colnames=None):
+        """
+        Update entry in the database
+        """
+        conn = connection
+        cur = conn.cursor()
+        try:
+            for val in self.kwargs.items():
+                proc_query = "UPDATE uo_files SET %s=%s"
+                if self.timestamp:
+                    proc_query += " WHERE timestamp=%s;"
+                    cur.execute(proc_query, (AsIs(val[0]), val[1],
+                                             self.timestamp))
+                elif self.fname and self.fpath:
+                    proc_query += " WHERE fname=%s AND fpath=%s;"
+                    cur.execute(proc_query, (AsIs(val[0]), str(val[1]), 
+                                             self.fname, self.fpath))
+        except Exception as ex:
+            logger.warning("Error updating database: "+str(ex))
+            conn.rollback()
+        finally:
+            conn.commit()
 
 
 def get_file_generators(inpath, start_datetime, end_datetime, incr=1):
@@ -177,6 +230,8 @@ if __name__ == "__main__":
         for gens in files_gen_list:
             filelist = [f for f in gens]
             tasks.put(AddFile(filelist))
+            #tasks.put(UpdateFileEntry(timestamp=datetime(*map(int, "2013.11.17".split('.') + "00.09.10".split('.'))), 
+            #                          filename=None, filepath=None, visibility=9))
         # updating weather entry
     finally:
         poisonChildren()
