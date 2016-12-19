@@ -10,7 +10,6 @@ import numpy as np
 from sqlalchemy import create_engine
 from cuip.cuip.utils import cuiplogger
 
-
 class Weather(object):
 
     def __init__(self):
@@ -121,21 +120,22 @@ class Weather(object):
         -------
         Unique list of values from dataframe compared to database table
         """
-        args = 'SELECT %s FROM %s' %(', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)
-        df.drop_duplicates(dup_cols, keep='last', inplace=True)
-        df = pd.merge(df, pd.read_sql(args, engine), how='left', on=dup_cols, indicator=True)
-        df = df[df['_merge'] == 'left_only']
-        self.logger.info("Dropping duplicates")
-        df.drop(['_merge'], axis=1, inplace=True)
-        # convert certain columns to numberic datatype so that when passing
-        # to sql database, there are no errors
-        numeric_cols = ["TemperatureF", "Dew PointF", "Humidity", 
-                        "Sea Level PressureIn", "VisibilityMPH", 
-                        "Wind SpeedMPH", "Gust SpeedMPH", 
-                        "PrecipitationIn", "WindDirDegrees"]
-        for col in numeric_cols:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-        return df
+        if not df.empty:
+            args = 'SELECT %s FROM %s' %(', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)
+            df.drop_duplicates(dup_cols, keep='last', inplace=True)
+            df = pd.merge(df, pd.read_sql(args, engine), how='left', on=dup_cols, indicator=True)
+            df = df[df['_merge'] == 'left_only']
+            self.logger.info("Dropping duplicates")
+            df.drop(['_merge'], axis=1, inplace=True)
+            # convert certain columns to numberic datatype so that when passing
+            # to sql database, there are no errors
+            numeric_cols = ["TemperatureF", "Dew PointF", "Humidity", 
+                            "Sea Level PressureIn", "VisibilityMPH", 
+                            "Wind SpeedMPH", "Gust SpeedMPH", 
+                            "PrecipitationIn", "WindDirDegrees"]
+            for col in numeric_cols:
+                df[col] = pd.to_numeric(df[col], errors='coerce')
+            return df
 
     def to_database(self, dbname=None, tablename=None, dataframe=None):
         """
@@ -177,35 +177,90 @@ class Weather(object):
         # Remove duplicates from dataframe
         df = self.remove_dups(df=dataframe, tablename=tablename, 
                               engine=conn, dup_cols=['Time'])
+
         # Write it to the database
-        self.logger.info("Writing to {new} entries to database".format(new=df.shape[0]))
+        self.logger.info("Writing {new} entries to database".format(new=df.shape[0]))
         df.replace(['-', '\s+'], np.nan, regex=True)
         df.set_index(["Time"], inplace=True)
         df.to_sql(tablename, engine, if_exists='append')
 
+    def get_airport_weather_range(self, nproc=None, start_date=None, end_date=None, *args, **kwargs):
+        """
+        convinient function to get weather information from airport
+        for a range of dates using multiple processes
+        Parameters
+        ----------
+        nproc: int
+            number of processes to spawn
+        start_date: datetime.datetime
+        end_date: datetime.datetime
+        Returns
+        -------
+        None
+        """
+        numdays      = (end_date - start_date).days 
+        date_range   = [end_date - datetime.timedelta(days=x) for x in range(0, numdays)]
+        def _from_airport(res_pipe, daterange, *args, **kwargs):
+            station_data = airport_data = weather_with_visibility = pd.DataFrame()
+            for date in daterange:
+                airport_data = airport_data.append(self.from_airport(date.year, date.month, date.day, "KNYC"))
+            res_pipe.send(airport_data)
+
+        parents, childs, ps = [], [], []
+        self.logger.info("Starting {proc} processes".format(proc=nproc))
+        
+        nout = len(date_range)
+        if nproc == 1:
+            nout_per_proc = nout
+        elif nout % nproc == 0:
+            nout_per_proc = nout//nproc
+        else:
+            nout_per_proc = nout//nproc + 1
+
+        for ip in range(nproc):
+            lo = ip * nout_per_proc
+            hi = (ip+1) * nout_per_proc
+            ptemp, ctemp = multiprocessing.Pipe()
+            parents.append(ptemp)
+            childs.append(ctemp)
+            ps.append(multiprocessing.Process(target=_from_airport,
+                                              args=(childs[ip], date_range[lo:hi]),
+                                              kwargs={"verbose":True}))
+            ps[ip].start()
+
+        # collect data
+        result = [parents[ip].recv() for ip in range(nproc)]
+        # join all processes
+        dum = [ps[ip].join() for ip in range(nproc)]
+        # remov empty dataframes and flush dataframes to the database
+        map(lambda data: weather.to_database(dbname, "weather", data), [r for r in result if not r.empty])
+
 
 if __name__ == "__main__":
-    weather = Weather()
-    pwsid   = "KNYNEWYO116"
-    airport = "KNYC"
-    dbname  = os.getenv("CUIP_WEATHER_DBNAME")
+    weather      = Weather()
+    pwsid        = "KNYNEWYO116"
+    airport      = "KNYC"
+    dbname       = os.getenv("CUIP_WEATHER_DBNAME")
     # set start and end date ranges
-    st_date = "2016.01.20"
-    en_date = "2016.01.24"
-    # create empty dataframes for storing results
-    station_data = airport_data = weather_with_visibility = pd.DataFrame()
-    # setting up pool of workers
-    pool    = multiprocessing.Pool(2)
-    # settin up arguments for workers
+    st_date      = "2016.01.01"
+    en_date      = "2016.01.31"
     start_date   = datetime.datetime(*map(int, st_date.split(".")))
     end_date     = datetime.datetime(*map(int, en_date.split(".")))
+    # get weather data asynchronously
+    nproc        = 4
+    weather.get_airport_weather_range(nproc, start_date, end_date)
+
+    """
     numdays      = (end_date - start_date).days
     date_range   = [end_date - datetime.timedelta(days=x) for x in range(0, numdays)]
-    # get weather info asynchronously
+    # create empty dataframes for storing results
+    station_data = airport_data = weather_with_visibility = pd.DataFrame()
+    # get weather info synchronously
     for date in date_range:
         airport_data = airport_data.append(weather.from_airport(date.year, date.month, date.day, "KNYC"))
         # station_data = station_data.append(weather.from_weather_station(date.year, date.month, date.day, "KNYNEWYO116"))
     weather.to_database(dbname, "weather", airport_data)
+    """
     """
     # sorting data
     airport_data.sort(["Time"], inplace=True)
