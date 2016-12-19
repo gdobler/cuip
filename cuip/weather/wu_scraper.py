@@ -2,10 +2,11 @@ from __future__ import print_function
 import argparse
 import os
 import sys
-import pandas as pd
 import datetime
 import multiprocessing
 import itertools
+import pandas as pd
+import numpy as np
 from sqlalchemy import create_engine
 from cuip.cuip.utils import cuiplogger
 
@@ -120,12 +121,20 @@ class Weather(object):
         -------
         Unique list of values from dataframe compared to database table
         """
-        args = 'SELECT %s FROM %s' %(', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)            
+        args = 'SELECT %s FROM %s' %(', '.join(['"{0}"'.format(col) for col in dup_cols]), tablename)
         df.drop_duplicates(dup_cols, keep='last', inplace=True)
         df = pd.merge(df, pd.read_sql(args, engine), how='left', on=dup_cols, indicator=True)
         df = df[df['_merge'] == 'left_only']
+        self.logger.info("Dropping duplicates")
         df.drop(['_merge'], axis=1, inplace=True)
-        self.logger.info("Dropped {dup} duplicates".format(dup=df.shape[0]))
+        # convert certain columns to numberic datatype so that when passing
+        # to sql database, there are no errors
+        numeric_cols = ["TemperatureF", "Dew PointF", "Humidity", 
+                        "Sea Level PressureIn", "VisibilityMPH", 
+                        "Wind SpeedMPH", "Gust SpeedMPH", 
+                        "PrecipitationIn", "WindDirDegrees"]
+        for col in numeric_cols:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
 
     def to_database(self, dbname=None, tablename=None, dataframe=None):
@@ -134,6 +143,7 @@ class Weather(object):
         """
         engine = create_engine('postgresql:///%s'%dbname)
         conn = engine.connect()
+        self.logger.info("Total {tot} cols".format(tot=dataframe.shape[0]))
         def _initialize_table(conn, tablename=None):
             """
             Create table schema and commit
@@ -180,18 +190,17 @@ if __name__ == "__main__":
     airport = "KNYC"
     dbname  = os.getenv("CUIP_WEATHER_DBNAME")
     # set start and end date ranges
-    st_date = "2016.01.01"
-    en_date = "2016.01.02"
+    st_date = "2016.01.20"
+    en_date = "2016.01.24"
     # create empty dataframes for storing results
     station_data = airport_data = weather_with_visibility = pd.DataFrame()
     # setting up pool of workers
-    station_pool = multiprocessing.Pool(2)
-    airport_pool = multiprocessing.Pool(2)
+    pool    = multiprocessing.Pool(2)
     # settin up arguments for workers
     start_date   = datetime.datetime(*map(int, st_date.split(".")))
     end_date     = datetime.datetime(*map(int, en_date.split(".")))
     numdays      = (end_date - start_date).days
-    date_range   = [start_date - datetime.timedelta(days=x) for x in range(0, numdays)]
+    date_range   = [end_date - datetime.timedelta(days=x) for x in range(0, numdays)]
     # get weather info asynchronously
     for date in date_range:
         airport_data = airport_data.append(weather.from_airport(date.year, date.month, date.day, "KNYC"))
