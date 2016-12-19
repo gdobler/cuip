@@ -233,7 +233,7 @@ class Weather(object):
         # join all processes
         dum = [ps[ip].join() for ip in range(nproc)]
         # remov empty dataframes and flush dataframes to the database
-        map(lambda data: weather.to_database(dbname, "weather", data), [r for r in result if not r.empty])
+        map(lambda data: weather.to_database(dbname, "knyc", data), [r for r in result if not r.empty])
 
 
 if __name__ == "__main__":
