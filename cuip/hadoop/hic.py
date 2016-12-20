@@ -46,7 +46,7 @@ class HadoopImageCluster(object):
         """
         conf = SparkConf().setAppName(APP_NAME)#.setMaster('local[*]')
         conf = conf.set("spark.executor.memory", "8g")
-        conf = conf.set("spark.executor.cores", "4")
+        conf = conf.set("spark.executor.cores", "20")
         conf = conf.set("spark.driver.memory", "8g")
         # To solve for losing spark executors
         conf = conf.set("spark.network.timeout", "36000000")
@@ -208,14 +208,18 @@ class HadoopImageCluster(object):
         
         bright = self.img_rdd.mapValues(_getbright)
         return bright
-                    
+
 if __name__ == "__main__":
-    f_path = '/user/mohitsharma44/uo_images/bad_combined'
-    f_ext = '.raw'
-    nrows = 2160
-    ncols = 4096
+#    f_path = '/user/mohitsharma44/uo_images/bad_combined'
+#    f_path = '/home/cusp/gdobler/cuip/cuip/hadoop/output/combined_images'
+    f_path = "/user/gdobler/temp_images_combined"
+    f_ext = ".raw"
+    binfac = 2
+    nrows = 2160 // binfac
+    ncols = 4096 // binfac
     ndims = 3
-    combined = 4
+    combined = 16
+#    hic = HadoopImageCluster(sc=None, 
     hic = HadoopImageCluster(sc=None, 
                              path=f_path, 
                              fname=None, 
@@ -233,4 +237,5 @@ if __name__ == "__main__":
     def toStr(data):
         return ','.join(str(d) for d in data)
     out = res.map(toStr)
-    out.saveAsTextFile('/user/mohitsharma44/dataplot.txt')
+#    out.saveAsTextFile('/user/mohitsharma44/dataplot.txt')
+    out.saveAsTextFile("dataplot.txt")
