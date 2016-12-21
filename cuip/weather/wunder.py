@@ -21,7 +21,7 @@ class Weather(object):
         """
         self.station_url = "http://www.wunderground.com/weatherstation/WXDailyHistory.asp?ID={pwsid}&day={day}&month={month}&year={year}&graphspan=day&format=1"
         self.airport_url = "https://www.wunderground.com/history/airport/{airport}/{year}/{month}/{day}/DailyHistory.html?format=1"
-        self.logger = cuiplogger.cuipLogger(loggername="wu_scraper", tofile=False)
+        self.logger = cuiplogger.cuipLogger(loggername="WUnder", tofile=False)
 
     def from_airport(self, year, month, day, airport=None):
         """
@@ -157,7 +157,7 @@ class Weather(object):
             if not conn.execute("select exists(SELECT * FROM information_schema.tables WHERE table_name=%s)", 
                                 (tablename,)).fetchone()[0]:
                 self.logger.warning("Creating New Table")
-                conn.execute('CREATE TABLE weather \
+                conn.execute('CREATE TABLE %s \
                               ("Time" timestamp without time zone PRIMARY KEY NOT NULL, \
                               "TemperatureF" REAL, \
                               "Dew PointF" REAL, \
@@ -170,7 +170,7 @@ class Weather(object):
                               "PrecipitationIn" REAL, \
                               "Events" varchar(20), \
                               "Conditions" varchar(20), \
-                              "WindDirDegrees" REAL);'
+                              "WindDirDegrees" REAL);'%tablename
                              )
         # Initialize DB
         _initialize_table(conn, tablename)
@@ -243,11 +243,11 @@ if __name__ == "__main__":
     dbname       = os.getenv("CUIP_WEATHER_DBNAME")
     # set start and end date ranges
     st_date      = "2016.01.01"
-    en_date      = "2016.01.31"
+    en_date      = "2016.12.18"
     start_date   = datetime.datetime(*map(int, st_date.split(".")))
     end_date     = datetime.datetime(*map(int, en_date.split(".")))
     # get weather data asynchronously
-    nproc        = 4
+    nproc        = 16
     weather.get_airport_weather_range(nproc, start_date, end_date)
 
     """
