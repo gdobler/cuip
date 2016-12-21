@@ -1,8 +1,59 @@
 import os
 import psycopg2
+import multiprocessing
 from datetime import datetime, timedelta
 from cuip.cuip.utils import cuiplogger
 logger = cuiplogger.cuipLogger(loggername="MISC", tofile=False)
+
+
+class asynchronous(object):
+    """
+    simple decorator for applying multiprocessing
+    on functions
+    """
+    def __init__(self, func):
+        self.func = func
+
+        def processified(*args, **kwargs):
+            self.tasks.put(self.func(*args, **kwargs))
+
+        self.processified = processified
+
+    def __call__(self, *args, **kwargs):
+        return self.func(*args, **kwargs)
+
+    def start(self, *args, **kwargs):
+        self.tasks = multiprocessing.Queue()
+        proc = multiprocessing.Process(target=self.processified, args=args, kwargs=kwargs)
+        proc.start()
+        return asynchronous.Result(self.tasks, proc)
+
+
+    class NotYetDoneException(Exception):
+        def __init__(self, message):
+            self.message = message
+
+
+    class Result(object):
+        def __init__(self, tasks, process):
+            self.tasks = tasks
+            self.process = process
+
+        def is_done(self):
+            return not self.process.is_alive()
+
+        def get_result(self):
+            if not self.is_done():
+                raise asynchronous.NotYetDoneException("call has not yet completed the task")
+
+            if not hasattr(self, 'result'):
+                self.result = self.tasks.get()
+
+            else:
+                self.process.join()
+                self.process.close()
+
+            return self.result
 
 
 def get_files(dbname, start_datetime, end_datetime):
@@ -30,7 +81,7 @@ def get_files(dbname, start_datetime, end_datetime):
               FROM lightscape     \
               WHERE timestamp     \
               BETWEEN %(start)s and %(end)s;"
-    cur.execute(querry, {'start': start_datetime, 
+    cur.execute(querry, {'start': start_datetime,
                          'end'  : end_datetime})
     rows   = cur.fetchall()
     # join filename with filepath
@@ -49,7 +100,7 @@ def _pathrange(basepath, start, end, delta):
     start: `datetime.datetime`
     end: `datetime.datetime`
     delta: `datetime.timedelta`
-    
+
     Returns
     -------
     `Generator` containing paths
@@ -58,9 +109,9 @@ def _pathrange(basepath, start, end, delta):
     try:
         while curr < end:
             # Only proceed if path with year/month/day exists
-            if os.path.exists("{path}/{year}/{month:0>2}/{day:0>2}".format(path = basepath, 
-                                                                           year = curr.year, 
-                                                                           month = curr.month, 
+            if os.path.exists("{path}/{year}/{month:0>2}/{day:0>2}".format(path = basepath,
+                                                                           year = curr.year,
+                                                                           month = curr.month,
                                                                            day = curr.day)):
                 next_path = "{path}/{year}/{month:0>2}/{day:0>2}/{hour:0>2}.{minute:0>2}.{second:0>2}".format(path = basepath,
                                                                                                               year = curr.year,
@@ -71,7 +122,7 @@ def _pathrange(basepath, start, end, delta):
                                                                                                               second = curr.second)
                 if os.path.exists(next_path):
                     yield next_path
-                
+
                 curr += delta
             else:
                 curr += timedelta(days=1)
@@ -81,13 +132,13 @@ def _pathrange(basepath, start, end, delta):
         # os.path.join doesn't respect the formatting
         # Leaving the code here just to remember
         """
-        yield os.path.join(str(basepath), 
-                           str(curr.year), 
-                           str(curr.month), 
-                           str(curr.day), 
+        yield os.path.join(str(basepath),
+                           str(curr.year),
+                           str(curr.month),
+                           str(curr.day),
                            "{hour:0>2}.{minute:0>2}.{second:0>2}".format(
-                hour=curr.hour, 
-                minute=curr.minute, 
+                hour=curr.hour,
+                minute=curr.minute,
                 second=curr.second
                 ))
         curr += delta
@@ -104,15 +155,15 @@ def _get_files(path, start_datetime, end_datetime):
     path: str
         root location where the files are stored.
         .. note: This should be the root dir from where the
-                 directory structure looks like 
+                 directory structure looks like
                  `YYYY/MM/DD/HH.MM.SS/file`
     start_datetime: `datetime.datetime`
         start datetime from which to get the files
     end_datetime: `datetime.datetime`
         end datetime until which to get the files
     """
-    paths = _pathrange(os.path.abspath(path), 
-                      start_datetime, end_datetime, 
+    paths = _pathrange(os.path.abspath(path),
+                      start_datetime, end_datetime,
                       timedelta(seconds=1))
     try:
         while True:
@@ -123,3 +174,36 @@ def _get_files(path, start_datetime, end_datetime):
         pass
     except OSError as ose:
         logger.error("Path "+ next_path +" doesn't exist")
+
+def get_file_generators(inpath, start_datetime, end_datetime, incr=1):
+   """
+   Returns generators containing files split by the hour
+   between start and end datetime
+   Parameters
+   ----------
+   inpath: str
+       string containing path to the root directory where
+       the files are stored
+   start_datetime: `datetime.datetime`
+       datetime object containing start period
+   end_datetime: `datetime.datetime`
+       datetime object containgin end period
+   """
+   files_gen_list = []
+   while True:
+       start_next = start_datetime+timedelta(hours=incr)
+       if start_next <= end_datetime:
+           # range is between current time interation and +incr hours
+           files_gen_list.append(
+               _get_files(inpath,
+                         start_datetime,
+                         start_next))
+           start_datetime += timedelta(hours=incr)
+       else:
+           # range is between current time iteration and end
+           files_gen_list.append(
+               _get_files(inpath,
+                         start_datetime,
+                         end_datetime))
+           break
+   return files_gen_list
