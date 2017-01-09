@@ -1,6 +1,6 @@
 import multiprocessing
 from sqlalchemy import create_engine, MetaData, Table, exc
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.orm import sessionmaker, scoped_session
 from cuip.cuip.utils import cuiplogger
 
 # logger
@@ -14,7 +14,7 @@ class Worker(multiprocessing.Process):
         self.task_queue = task_queue
         self.result_queue = result_queue
         self.engine = create_engine('postgresql:///{0}'.format(dbname))
-        Session = sessionmaker(bind=self.engine)
+        Session = scoped_session(sessionmaker(bind=self.engine))
         self.session = Session()
         self.md = MetaData(bind=self.engine)
         self.md.reflect()
@@ -30,7 +30,7 @@ class Worker(multiprocessing.Process):
             table = Table(self.tablename, self.md, autoload=True)
             return table
         except exc.NoSuchTableError:
-            logger.error(str(tablename)+" does not exist")
+            logger.error(str(self.tablename)+" does not exist")
 
     def run(self):
         proc_name = self.name
