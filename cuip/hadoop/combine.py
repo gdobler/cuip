@@ -8,11 +8,14 @@ from datetime import datetime
 from itertools import izip_longest
 from scipy.ndimage import imread
 from cuip.cuip.utils import cuiplogger
+from cuip.cuip.database.add_files import UpdateTask
 from cuip.cuip.database.db_tables import ToFilesDB
+from cuip.cuip.database.database_worker import Worker
 from cuip.cuip.utils.misc import get_files, _get_files
 
 logger = cuiplogger.cuipLogger(loggername="COMBINE", tofile=False)
-
+dbname = os.getenv("CUIP_DBNAME")
+tablename = "test_uo_files" 
 # -- define the function for stacking images
 def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160, 
                  ncol=4096, nwav=3, verbose=False):
@@ -101,12 +104,40 @@ if __name__ == "__main__":
     logger.info("combining {0} input files into {1} output files." \
                     .format(nin,nout))
 
+    # ----------------------------------------
+    # database related calls
+    def _poison_workers(tasks):
+        for i in range(num_workers):
+            tasks.put(None)
+
+    # create 1 worker
+    # -- Do not increase to more than 1
+    num_workers = 1
+    tasks = multiprocessing.JoinableQueue()
+    results = multiprocessing.Queue()
+    workers     = [ Worker(dbname, tablename, tasks, results)
+                    for i in range(num_workers) ] 
+    # start the workers
+    for worker in workers:
+        worker.start()
+                
+    # reset group ids in the database
+    tasks.put(UpdateTask(flist=None, values_to_update={'gid':-99}))
+
+    # set the group ids
+    for k, v in flist_out.items():
+        tasks.put(UpdateTask(flist=v, values_to_update={'gid':k}))
+
+    _poison_workers(tasks)
+        
+    # -----------------------------------------
+    
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     result = []
     groups_per_proc  = map(lambda x: [z for z in x if z is not None], 
                            list(izip_longest(*(iter(flist_out.keys()), ) *nproc)))
-
+    """
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
@@ -133,3 +164,4 @@ if __name__ == "__main__":
     #print type(result[0][0][1])
     #print result[0]
     #print result
+    """
