@@ -6,7 +6,7 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 class ToFilesDB(Base):
-    __tablename__ = "uo_files"
+    __tablename__ = "test_uo_files"
 
     gid           = Column('gid',        Integer)
     fname         = Column('fname',      String(length=100, convert_unicode=True))
@@ -57,3 +57,4 @@ def clone_table(where):
         database will be filtered
     """
     pass
+
