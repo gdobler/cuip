@@ -1,11 +1,12 @@
 from sqlalchemy import Sequence
-from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean
+from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, PrimaryKeyConstraint
+from sqlalchemy.dialects.postgresql import TIMESTAMP
 from sqlalchemy.ext.declarative import declarative_base
 
 Base = declarative_base()
 
 class ToFilesDB(Base):
-    __tablename__ = "test"
+    __tablename__ = "uo_files"
 
     gid           = Column('gid',        Integer)
     fname         = Column('fname',      String(length=100, convert_unicode=True))
@@ -14,18 +15,21 @@ class ToFilesDB(Base):
     mean          = Column('mean',       Float)
     std           = Column('std',        Float)
     bright_pix    = Column('bright_pix', Integer)
-    timestamp     = Column('timestamp',  DateTime(timezone=False), primary_key=True)
+    timestamp     = Column('timestamp',  DateTime(timezone=False), index=True)
     visibility    = Column('visibility', Float)
-    cloud         = Column('conditions', String(50))
+    cloud         = Column('conditions', String(length=50, convert_unicode=True))
     roffset       = Column('roffset',    Integer)
     coffset       = Column('coffset',    Integer)
     angle         = Column('angle',      Float)
     usable        = Column('usable',     Boolean)
 
+    __table_args__ = (PrimaryKeyConstraint('fpath', 'fname'), 
+                      {})
+
 
 
 class ToWeatherDB(Base):
-    __tablename__ = "weather"
+    __tablename__ = "knyc"
     
     timestamp     = Column('Time',                 DateTime(timezone=False), primary_key=True)
     temperatureF  = Column('TemperatureF',         Float)
@@ -41,3 +45,15 @@ class ToWeatherDB(Base):
     conditions    = Column('Conditions',           String(50))
     wind_dir_deg  = Column('WindDirDegrees',       Float)
     
+
+def clone_table(where):
+    """
+    Create a new table based on (multiple) where
+    clause(s)
+    Parameters
+    ----------
+    where: dict
+        column names as key and the value against which
+        database will be filtered
+    """
+    pass
