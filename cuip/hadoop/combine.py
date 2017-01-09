@@ -5,8 +5,10 @@ import os
 import multiprocessing
 import numpy as np
 from datetime import datetime
+from itertools import izip_longest
 from scipy.ndimage import imread
 from cuip.cuip.utils import cuiplogger
+from cuip.cuip.database.db_tables import ToFilesDB
 from cuip.cuip.utils.misc import get_files, _get_files
 
 logger = cuiplogger.cuipLogger(loggername="COMBINE", tofile=False)
@@ -18,11 +20,11 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
     Take a list of lists, merge each sublist into a stacked image, and 
     write to disk.
     """
-    dr      = nrow//binfac
-    dc      = ncol//binfac
+    dr       = nrow//binfac
+    dc       = ncol//binfac
     img_out = np.zeros([nimg_per_file*dr, dc, nwav], dtype=np.uint8)
 
-    for tflist in sublist:
+    for gid, tflist in sublist.items():
         for ii,tfile in enumerate(tflist):
             ext = tfile[-3:].lower()
             if ext == 'png':
@@ -33,14 +35,15 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
                     .reshape(nrow, ncol, nwav)[::binfac, ::binfac]
             else:
                 logger.error("File format not supported "+str(tfile))
-
-        newfname = os.path.join(dpath, os.path.basename(tflist[0]))[:-3]+"raw"
-
-        logger.info("Writing: "+newfname)
+        #newfname = os.path.join(dpath, os.path.basename(tflist[0]))[:-3]+"raw"
+        newfname = os.path.join(dpath, "{0}.raw".format(gid))
+        logger.info("Writing group: "+str(gid))
         img_out.tofile(newfname)
         img_out[:] = 0
 
-    return
+    print "---"
+    conn.close()
+    return 
 
 if __name__ == "__main__":
 
@@ -53,7 +56,7 @@ if __name__ == "__main__":
     st_date = "2013.11.17"
     st_time = "15.00.00"
     en_date = "2013.11.17"
-    en_time = "23.59.59"
+    en_time = "15.59.59"
 
     st = datetime(*[int(i) for i in st_date.split(".") + st_time.split(".")])
     en = datetime(*[int(i) for i in en_date.split(".") + en_time.split(".")])
@@ -78,11 +81,12 @@ if __name__ == "__main__":
     nimg_per_file = 4 * binfac * binfac
     nout          = nin // nimg_per_file + 1*((nin % nimg_per_file) > 0)
 
-    # -- partition the file list into output files and processors
-    flist_out = [file_list[i*nimg_per_file:(i+1)*nimg_per_file] for i in range(nout)]
+    # -- partition the file list into output files and processors in the form of dictionary
+    # -- where key = group id and value = list of files in that group
+    flist_out = {i: file_list[i*nimg_per_file:(i+1)*nimg_per_file] for i in range(nout)}
 
     # -- set the number of processors
-    nproc = 16
+    nproc = 2
     logger.info("Creating %s worker processes"%(nproc))
 
     # -- set the number of files per processor
@@ -99,20 +103,33 @@ if __name__ == "__main__":
 
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
-    
+    result = []
+    groups_per_proc  = map(lambda x: [z for z in x if z is not None], 
+                           list(izip_longest(*(iter(flist_out.keys()), ) *nproc)))
+
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
         childs.append(ctemp)
         
-        lo = ip * nout_per_proc
-        hi = (ip+1) * nout_per_proc
+        #lo = ip * nout_per_proc
+        #hi = (ip+1) * nout_per_proc
+        lo = ip * len(groups_per_proc)/nproc
+        hi = (ip+1) * len(groups_per_proc)/nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
-                                          args=(childs[ip], flist_out[lo:hi], 
+                                          args=(childs[ip], {k: flist_out[k] 
+                                                             for file_group in groups_per_proc[lo: hi]
+                                                             for k in file_group},
                                                 outpath, binfac, nimg_per_file), 
                                           kwargs={"verbose":True}))
-        
+
         ps[ip].start()
+        childs[ip].close()
+        #result.append(parents[ip].recv())
 
     # -- Join all processes
     dum = [ps[ip].join() for ip in range(nproc)]
+    #print len(result[0])
+    #print type(result[0][0][1])
+    #print result[0]
+    #print result
