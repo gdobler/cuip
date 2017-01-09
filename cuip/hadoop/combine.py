@@ -137,7 +137,6 @@ if __name__ == "__main__":
     result = []
     groups_per_proc  = map(lambda x: [z for z in x if z is not None], 
                            list(izip_longest(*(iter(flist_out.keys()), ) *nproc)))
-    """
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
@@ -156,12 +155,6 @@ if __name__ == "__main__":
 
         ps[ip].start()
         childs[ip].close()
-        #result.append(parents[ip].recv())
 
     # -- Join all processes
     dum = [ps[ip].join() for ip in range(nproc)]
-    #print len(result[0])
-    #print type(result[0][0][1])
-    #print result[0]
-    #print result
-    """
