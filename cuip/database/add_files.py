@@ -53,8 +53,14 @@ class UpdateTask(object):
         update database
         """
         try:
-            update(ToFilesDB).where(ToFilesDB.fname.in_(map(lambda x: x.split('/')[-1], self.flist))).values(self.values_to_update)
+            if self.flist:
+                upd = update(ToFilesDB).where(ToFilesDB.fname.in_(map(lambda x: x.split('/')[-1], self.flist))).values(self.values_to_update)
+            else:
+                logger.info("Updating "+str(self.values_to_update)+ "for all rows")
+                upd = update(ToFilesDB).values(self.values_to_update)
+            session.execute(upd)
+            logger.info("Commiting")
             session.commit()
         except exc.IntegrityError:
-            logger.warning("Duplicate Entry found for "+str(os.path.basename(f)))
+            logger.warning("Integrity Error: Possibly duplicate entry found. Rolling back the commit before exiting")
             session.rollback()
