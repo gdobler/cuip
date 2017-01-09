@@ -78,7 +78,7 @@ def get_files(dbname, start_datetime, end_datetime):
     conn   = psycopg2.connect("dbname='%s'"%(dbname))
     cur    = conn.cursor()
     querry = "SELECT fname, fpath \
-              FROM lightscape     \
+              FROM uo_files     \
               WHERE timestamp     \
               BETWEEN %(start)s and %(end)s;"
     cur.execute(querry, {'start': start_datetime,
