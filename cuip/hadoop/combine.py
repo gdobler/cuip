@@ -33,7 +33,7 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
                     [::binfac, ::binfac]
             elif ext == 'raw':
                 img_out[dr*ii:dr*(ii+1)] = np.fromfile(tfile, dtype=np.uint8) \
-                    .reshape(nrow, ncol, nwav)[::binfac, ::binfac]
+                    .reshape(nrow, ncol, nwav)[::binfac, ::binfac, ::-1]
             else:
                 logger.error("File format not supported "+str(tfile))
         #newfname = os.path.join(dpath, os.path.basename(tflist[0]))[:-3]+"raw"
@@ -63,7 +63,7 @@ if __name__ == "__main__":
     # -- get all the files between st and en
     if dbname:
         logger.info("Fetching file locations from database")
-        file_list = get_files(dbname, st, en)
+        file_list = get_files(f_dbname, st, en)
     else:
         logger.warning("Database not found. Process continue by scanning filesystem")
         logger.warning("This might take longer")
@@ -149,10 +149,13 @@ if __name__ == "__main__":
         lo = ip * nout//nproc
         hi = (ip+1) * nout//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
-                                          args=(childs[ip], {k: flist_out[k] 
-                                                             for file_group in groups_per_proc[lo: hi]
-                                                             for k in file_group},
-                                                outpath, binfac, nimg_per_file), 
+                                          args=(childs[ip], 
+                                                {k: flist_out[k] for 
+                                                 file_group in 
+                                                 groups_per_proc[lo: hi]
+                                                 for k in file_group},
+                                                outpath, binfac, 
+                                                nimg_per_file), 
                                           kwargs={"verbose":True}))
 
         ps[ip].start()
