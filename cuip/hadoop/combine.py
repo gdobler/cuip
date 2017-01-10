@@ -14,8 +14,7 @@ from cuip.cuip.database.database_worker import Worker
 from cuip.cuip.utils.misc import get_files, _get_files
 
 logger = cuiplogger.cuipLogger(loggername="COMBINE", tofile=False)
-dbname = os.getenv("CUIP_DBNAME")
-tablename = "test_uo_files" 
+
 # -- define the function for stacking images
 def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160, 
                  ncol=4096, nwav=3, verbose=False):
@@ -47,10 +46,10 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
 
 if __name__ == "__main__":
 
-    # -- get the file list
     inpath  = os.getenv("CUIP_2013")
+    f_dbname = os.getenv("CUIP_DBNAME")
+    f_tbname = os.getenv("CUIP_TBNAME")
     outpath = "output/combined_images"
-    dbname  = os.getenv("CUIP_DBNAME")
         
     # set start and end times
     st_date = "2013.11.17"
@@ -81,9 +80,11 @@ if __name__ == "__main__":
     nimg_per_file = 4 * binfac * binfac
     nout          = nin // nimg_per_file + 1*((nin % nimg_per_file) > 0)
 
-    # -- partition the file list into output files and processors in the form of dictionary
+    # -- partition the file list into output files and processors 
+    # -- in the form of dictionary
     # -- where key = group id and value = list of files in that group
-    flist_out = {i: file_list[i*nimg_per_file:(i+1)*nimg_per_file] for i in range(nout)}
+    flist_out = {i: file_list[i*nimg_per_file:(i+1)*nimg_per_file] \
+                     for i in range(nout)}
 
     # -- set the number of processors
     nproc = 10
@@ -103,6 +104,9 @@ if __name__ == "__main__":
 
     # -- database related calls
     def _poison_workers(tasks):
+        """
+        convinient method to kill all database workers
+        """
         for i in range(num_workers):
             tasks.put(None)
 
@@ -111,7 +115,7 @@ if __name__ == "__main__":
     num_workers = 1
     tasks = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
-    workers     = [ Worker(dbname, tablename, tasks, results)
+    workers     = [ Worker(f_dbname, f_tbname, tasks, results)
                     for i in range(num_workers) ] 
     # start the workers
     for worker in workers:
@@ -135,7 +139,8 @@ if __name__ == "__main__":
     groups_per_proc = [flist_out.keys()[i : i + nout//nproc] 
                        for i in range(0, len(flist_out.keys()), 
                                       nout//nproc)]
-    logger.info("Starting combining process")
+
+    logger.info("Starting stacking process")
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
