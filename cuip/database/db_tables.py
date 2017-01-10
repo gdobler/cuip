@@ -1,3 +1,4 @@
+import os
 from sqlalchemy import Sequence
 from sqlalchemy import Column, Integer, Float, String, DateTime, Boolean, PrimaryKeyConstraint
 from sqlalchemy.dialects.postgresql import TIMESTAMP
@@ -6,22 +7,25 @@ from sqlalchemy.ext.declarative import declarative_base
 Base = declarative_base()
 
 class ToFilesDB(Base):
-    __tablename__ = "test_uo_files"
 
-    gid           = Column('gid',        Integer)
-    fname         = Column('fname',      String(length=100, convert_unicode=True))
-    fpath         = Column('fpath',      String(length=100, convert_unicode=True))
-    fsize         = Column('fsize',      Integer)
-    mean          = Column('mean',       Float)
-    std           = Column('std',        Float)
-    bright_pix    = Column('bright_pix', Integer)
-    timestamp     = Column('timestamp',  DateTime(timezone=False), index=True)
-    visibility    = Column('visibility', Float)
-    cloud         = Column('conditions', String(length=50, convert_unicode=True))
-    roffset       = Column('roffset',    Integer)
-    coffset       = Column('coffset',    Integer)
-    angle         = Column('angle',      Float)
-    usable        = Column('usable',     Boolean)
+
+    __tablename__ = os.getenv("CUIP_TBNAME")
+
+    gid           = Column('gid',         Integer)
+    fname         = Column('fname',       String(length=100, convert_unicode=True))
+    fpath         = Column('fpath',       String(length=100, convert_unicode=True))
+    fsize         = Column('fsize',       Integer)
+    mean          = Column('mean',        Float)
+    std           = Column('std',         Float)
+    bright_pix    = Column('bright_pix',  Integer)
+    timestamp     = Column('timestamp',   DateTime(timezone=False), index=True)
+    visibility    = Column('visibility',  Float)
+    cloud         = Column('conditions',  String(length=50, convert_unicode=True))
+    temperature   = Column('temperature', Float)
+    roffset       = Column('roffset',     Integer)
+    coffset       = Column('coffset',     Integer)
+    angle         = Column('angle',       Float)
+    usable        = Column('usable',      Boolean)
 
     __table_args__ = (PrimaryKeyConstraint('fpath', 'fname'), 
                       {})
@@ -29,7 +33,9 @@ class ToFilesDB(Base):
 
 
 class ToWeatherDB(Base):
-    __tablename__ = "knyc"
+
+
+    __tablename__ = os.getenv("CUIP_WEATHER_TBNAME")
     
     timestamp     = Column('Time',                 DateTime(timezone=False), primary_key=True)
     temperatureF  = Column('TemperatureF',         Float)

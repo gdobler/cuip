@@ -13,11 +13,11 @@ from cuip.cuip.database.database_worker import Worker
 logger = cuiplogger.cuipLogger(loggername="CreateDB", tofile=False)
 
 if __name__ == "__main__":
-    inpath    = os.getenv("CUIP_2014")
-    dbname    = os.getenv("CUIP_DBNAME")
-    w_dbname  = os.getenv("CUIP_WEATHER_DBNAME")
-    tablename = "uo_files"
-    w_tbname  = "knyc"
+    inpath   = os.getenv("CUIP_2014")
+    dbname   = os.getenv("CUIP_DBNAME")
+    f_tbname = os.getenv("CUIP_TBNAME")
+    w_dbname = os.getenv("CUIP_WEATHER_DBNAME")
+    w_tbname = os.getenv("CUIP_WEATHER_TBNAME")
 
     # sanity checks for database tables
     engine = create_engine('postgresql:///{0}'.format(dbname))
@@ -31,13 +31,13 @@ if __name__ == "__main__":
         weather_table.__table__.create(bind=engine, checkfirst=False)
 
     # threadsafe queues for adding tasks and collecting results
-    tasks = multiprocessing.JoinableQueue()
+    tasks   = multiprocessing.JoinableQueue()
     results = multiprocessing.Queue()
 
     # start database workers
     num_workers = 1
     logger.info('Creating %d Workers' % num_workers)
-    workers = [ Worker(dbname, tablename, tasks, results)
+    workers = [ Worker(dbname, f_tbname, tasks, results)
                 for i in xrange(num_workers) ]
     for w in workers:
         w.start()
@@ -48,9 +48,9 @@ if __name__ == "__main__":
             tasks.put(None)
 
     # Enqueue job
-    start_date  = "2014.12.31"
+    start_date  = "2014.01.01"
     start_time  = "00.00.01"
-    end_date    = "2015.01.01"
+    end_date    = "2014.02.01"
     end_time    = "23.59.59"
     s_datetime  = datetime.datetime(*map(int, start_date.split('.') + 
                                          start_time.split('.') ))
@@ -75,9 +75,8 @@ if __name__ == "__main__":
         #    tasks.put(AddTask(filelist))
         # adding weather info from weather database
         #for date in date_range:
-        #    tasks.put(AddWeather(w_dbname, w_tbname,
-        #                         date[1], date[0]))
-        tasks.put(AddWeather(w_dbname, w_tbname, s_datetime, e_datetime))
+        #    tasks.put(AddWeather(date[1], date[0]))
+        tasks.put(AddWeather(s_datetime, e_datetime))
     finally:
         poisonChildren()
         tasks.join()

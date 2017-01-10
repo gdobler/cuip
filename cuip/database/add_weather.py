@@ -13,51 +13,59 @@ logger = cuiplogger.cuipLogger(loggername="AddWeather", tofile=False)
 
 class AddWeather(object):
 
-    def __init__(self, w_dbname, w_tbname,
-                 start_datetime, end_datetime):
+    def __init__(self, start_datetime, end_datetime):
         """
         Update database with the contents from Dataframe
         Parameters
         ----------
-        df: pd.DatFrame()
-            datframe to update the columns from
-        .. note: dataframe should have `Time` column
-            of datatype datetime
+        start_datetime: datetime.datetime
+        end_datetime  : datetime.datetime
         """
         self.start_datetime = start_datetime
         self.end_datetime   = end_datetime
-        self.wdf            = self.get_weather_df(w_dbname,
-                                                  w_tbname)
+        self.f_dbname       = os.getenv("CUIP_DBNAME")
+        self.f_tbname       = os.getenv("CUIP_TBNAME")
+        self.w_dbname        = os.getenv("CUIP_WEATHER_DBNAME")
+        self.w_tbname       = os.getenv("CUIP_WEATHER_TBNAME")
 
     def __call__(self, session=None, engine=None, table=None):
 
         # load the data chunk from files database for similar time
-        query = """SELECT * FROM uo_files \
+        query = """SELECT * FROM {table} \
                  WHERE "timestamp" \
-                 BETWEEN '{first}' AND '{last}'""".format(
-                                                        first=self.start_datetime,
-                                                        last=self.end_datetime)
-        dbf   = pd.read_sql(query, engine)
+                 BETWEEN '{first}' AND '{last}'""".\
+            format(
+                     table=self.f_tbname,
+                     first=self.start_datetime,
+                     last=self.end_datetime)
 
+        # load result in a dataframe
+        dbf   = pd.read_sql(query, engine)
         # sort the files database
         dbf.sort_values(by='timestamp', inplace=True)
+        
+        # get weather dataframe
+        wdf = self.get_weather_df(self.start_datetime,
+                                  self.end_datetime)        
         # sort the weather dataframe
-        self.wdf.sort_values(by='Time', inplace=True)
+        wdf.sort_values(by='Time', inplace=True)
         
         # combine the weather with the chunk
         try:
-            logger.info("Combining dataframes")
-            if not (dbf.empty or self.wdf.empty):
+            logger.info("Adding weather data to {0}".\
+                            format(self.f_tbname))
+
+            if not (dbf.empty or wdf.empty):
             # -- for multiprocessing... TBD    
             #    dbf[['closest']] = dbf.timestamp.apply(
-            #        self.find_closest_date, args=[self.wdf.Time])
+            #        self.find_closest_date, args=[wdf.Time])
             #    logger.info("merging")
-            #    combined_df = pd.merge(dbf, self.wdf, left_on=['closest'], right_on=['Time'])
-                combined_df = pd.merge_asof(dbf,
-                                            self.wdf[['Time', 'VisibilityMPH', 'Conditions']],
-                                            left_on='timestamp', right_on='Time',
-                                            tolerance=pd.Timedelta('1hour'),
-                                            )
+            #    combined_df = pd.merge(dbf, wdf, left_on=['closest'], right_on=['Time'])
+                combined_df = pd.\
+                    merge_asof(dbf,
+                               wdf[['Time', 'VisibilityMPH', 'Conditions', 'TemperatureF']],
+                               left_on='timestamp', right_on='Time',
+                               tolerance=pd.Timedelta('1hour'))
                 self.update_database(combined_df, session, table)
         except ValueError as ve:
             logger.warning("Error merging dataframe: "+str(ve))
@@ -77,19 +85,23 @@ class AddWeather(object):
             idx.append('closest_delta')
         return pd.Series(res, index=idx)
 
-
-    def get_weather_df(self, w_dbname, w_tbname):
-        logger.info("Getting weather from: {st} -- {en} ".format(st=self.start_datetime,
-                                                                 en=self.end_datetime))
-        w_engine = create_engine('postgresql:///{0}'.format(w_dbname))
+    def get_weather_df(self, start_datetime, end_datetime):
+        logger.info("Getting weather from: {st} -- {en} ".\
+                        format(st=start_datetime,
+                               en=end_datetime))
+        # fir up another engine for weather database
+        w_engine = create_engine('postgresql:///{0}'.\
+                                     format(self.w_dbname))
         w_md     = MetaData(bind=w_engine)
         w_md.reflect()
-        w_table  = Table(w_tbname, w_md, autoload=True)
-        query = """SELECT * FROM {table} \
-                 WHERE "Time" \
-                 BETWEEN '{first}' AND '{last}'""".format(table=w_tbname,
-                                                        first=self.start_datetime,
-                                                        last=self.end_datetime)
+        w_table  = Table(self.w_tbname, w_md, autoload=True)
+        query    = """SELECT * FROM {table} \
+                      WHERE "Time" \
+                      BETWEEN '{first}' AND '{last}'""".\
+            format(table=self.w_tbname,
+                   first=start_datetime,
+                   last=end_datetime)
+        # load result in a dataframe
         wdf      = pd.read_sql(query, w_engine)
         return wdf
 
@@ -103,37 +115,32 @@ class AddWeather(object):
         table: table in which to update
         """
         try:
+            logger.info("Updating database")
             # update the database
             combined_df = df
-            combined_df.rename(columns={'timestamp': 'time'}, inplace=True)
-            logger.info("Updating database")
-            #for ind, row in combined_df.iterrows():
-            records = combined_df[['time', 'VisibilityMPH', 'Conditions']].to_dict(orient='records')
-            """
-            Files = ToFilesDB
-            query_obj = session.query(Files)
-            logger.info("starting loop")
-            for record in records:
-                logger.info("updating: "+str(record['time']))
-                query_obj.filter(Files.timestamp == record['time']).\
-                    update({'visibility': record['VisibilityMPH'], 
-                            'cloud': record['Conditions']})
-            """
+            combined_df.rename(columns={'timestamp': 'time'}, 
+                               inplace=True)
+
+            # convert dataframe to dictionary to perform bulk update
+            records = combined_df[['time', 'VisibilityMPH', 
+                                   'Conditions', 'TemperatureF']].\
+                                   to_dict(orient='records')
+
+            # create an orm statement
             stmt = update(table).\
                 where(table.c.timestamp == bindparam('time')).\
                 values({'visibility' : bindparam('VisibilityMPH'), 
-                        'conditions' : bindparam('Conditions')})
-            session.execute(stmt, records)
-            """
-            #upd = update(table) \
-            #.where(table.c.timestamp == row['timestamp']) \
-            #.values({'visibility': row['VisibilityMPH'],
-            #'conditions'   : row['Conditions']})
+                        'conditions' : bindparam('Conditions'),
+                        'temperature': bindparam('TemperatureF')})
 
-            #session.execute(upd)
-            """
-            logger.info("Commiting to Database")
+            # perform bulk update
+            session.execute(stmt, records)
+
+            # commit to database
             session.commit()
         except exc.IntegrityError:
-            logger.warning("Duplicate Entry in updating weather "+str(os.path.basename(f)))
+            logger.warning("Possibly duplicate entry"+
+                           "in updating weather "+
+                           str(os.path.basename(f))+
+                           "rolling back database")
             session.rollback()

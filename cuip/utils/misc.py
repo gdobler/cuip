@@ -75,17 +75,18 @@ def get_files(dbname, start_datetime, end_datetime):
     files: list
         list of absolute paths of the files
     """
-    conn   = psycopg2.connect("dbname='%s'"%(dbname))
-    cur    = conn.cursor()
-    querry = "SELECT fname, fpath \
-              FROM uo_files     \
-              WHERE timestamp     \
-              BETWEEN %(start)s and %(end)s;"
+    f_tbname = os.getenv("CUIP_TBNAME")
+    conn    = psycopg2.connect("dbname='%s'"%(dbname))
+    cur     = conn.cursor()
+    querry  = "SELECT fname, fpath \
+               FROM {tbname}     \
+               WHERE timestamp     \
+               BETWEEN %(start)s and %(end)s;".format(tbname=f_tbname)
     cur.execute(querry, {'start': start_datetime,
                          'end'  : end_datetime})
-    rows   = cur.fetchall()
+    rows    = cur.fetchall()
     # join filename with filepath
-    files  = map(lambda x: os.path.join(x[1], x[0]), rows)
+    files   = [os.path.join(x[1], x[0]) for x in rows]
     return files
 
 def _pathrange(basepath, start, end, delta):
