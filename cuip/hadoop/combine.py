@@ -8,7 +8,7 @@ from datetime import datetime
 from itertools import izip_longest
 from scipy.ndimage import imread
 from cuip.cuip.utils import cuiplogger
-from cuip.cuip.database.add_files import UpdateTask
+from cuip.cuip.database.add_files import UpdateTask, ToCSV
 from cuip.cuip.database.db_tables import ToFilesDB
 from cuip.cuip.database.database_worker import Worker
 from cuip.cuip.utils.misc import get_files, _get_files
@@ -25,6 +25,7 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
     """
     dr       = nrow//binfac
     dc       = ncol//binfac
+    """
     img_out = np.zeros([nimg_per_file*dr, dc, nwav], dtype=np.uint8)
 
     for gid, tflist in sublist.items():
@@ -43,7 +44,8 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
         logger.info("Writing group: "+str(gid))
         img_out.tofile(newfname)
         img_out[:] = 0
-
+    """
+    logger.info(sublist.keys())
     print "---"
     conn.close()
     return 
@@ -128,6 +130,9 @@ if __name__ == "__main__":
     for k, v in flist_out.items():
         tasks.put(UpdateTask(flist=v, values_to_update={'gid':k}))
 
+    # export the table filtered by modified values
+    #tasks.put(ToCSV(where_clause='gid', compare_value=[-99]))
+
     _poison_workers(tasks)
         
     # -----------------------------------------
@@ -135,8 +140,11 @@ if __name__ == "__main__":
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     result = []
-    groups_per_proc  = map(lambda x: [z for z in x if z is not None], 
-                           list(izip_longest(*(iter(flist_out.keys()), ) *nproc)))
+
+    groups_per_proc = [flist_out.keys()[i : i + nout//nproc] 
+                       for i in range(0, len(flist_out.keys()), nout//nproc)]
+
+    print groups_per_proc
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
@@ -144,8 +152,8 @@ if __name__ == "__main__":
         
         #lo = ip * nout_per_proc
         #hi = (ip+1) * nout_per_proc
-        lo = ip * len(groups_per_proc)/nproc
-        hi = (ip+1) * len(groups_per_proc)/nproc
+        lo = ip * len(groups_per_proc)//nproc
+        hi = (ip+1) * len(groups_per_proc)//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
                                           args=(childs[ip], {k: flist_out[k] 
                                                              for file_group in groups_per_proc[lo: hi]
@@ -158,3 +166,4 @@ if __name__ == "__main__":
 
     # -- Join all processes
     dum = [ps[ip].join() for ip in range(nproc)]
+
