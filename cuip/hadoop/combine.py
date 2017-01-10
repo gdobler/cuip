@@ -142,16 +142,14 @@ if __name__ == "__main__":
     result = []
 
     groups_per_proc = [flist_out.keys()[i : i + nout//nproc] 
-                       for i in range(0, len(flist_out.keys()), nout//nproc)]
+                       for i in range(0, len(flist_out.keys()), 
+                                      nout//nproc)]
 
-    print groups_per_proc
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
         childs.append(ctemp)
         
-        #lo = ip * nout_per_proc
-        #hi = (ip+1) * nout_per_proc
         lo = ip * len(groups_per_proc)//nproc
         hi = (ip+1) * len(groups_per_proc)//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
