@@ -25,9 +25,7 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
     """
     dr       = nrow//binfac
     dc       = ncol//binfac
-    """
     img_out = np.zeros([nimg_per_file*dr, dc, nwav], dtype=np.uint8)
-
     for gid, tflist in sublist.items():
         for ii,tfile in enumerate(tflist):
             ext = tfile[-3:].lower()
@@ -44,9 +42,6 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
         logger.info("Writing group: "+str(gid))
         img_out.tofile(newfname)
         img_out[:] = 0
-    """
-    logger.info(sublist.keys())
-    print "---"
     conn.close()
     return 
 
@@ -91,7 +86,7 @@ if __name__ == "__main__":
     flist_out = {i: file_list[i*nimg_per_file:(i+1)*nimg_per_file] for i in range(nout)}
 
     # -- set the number of processors
-    nproc = 2
+    nproc = 10
     logger.info("Creating %s worker processes"%(nproc))
 
     # -- set the number of files per processor
@@ -106,8 +101,7 @@ if __name__ == "__main__":
     logger.info("combining {0} input files into {1} output files." \
                     .format(nin,nout))
 
-    # ----------------------------------------
-    # database related calls
+    # -- database related calls
     def _poison_workers(tasks):
         for i in range(num_workers):
             tasks.put(None)
@@ -131,27 +125,24 @@ if __name__ == "__main__":
         tasks.put(UpdateTask(flist=v, values_to_update={'gid':k}))
 
     # export the table filtered by modified values
-    #tasks.put(ToCSV(where_clause='gid', compare_value=[-99]))
+    tasks.put(ToCSV(where_clause='gid', compare_value=range(22)))
 
     _poison_workers(tasks)
         
-    # -----------------------------------------
-    
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     result = []
-
     groups_per_proc = [flist_out.keys()[i : i + nout//nproc] 
                        for i in range(0, len(flist_out.keys()), 
                                       nout//nproc)]
-
+    logger.info("Starting combining process")
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
         childs.append(ctemp)
         
-        lo = ip * len(groups_per_proc)//nproc
-        hi = (ip+1) * len(groups_per_proc)//nproc
+        lo = ip * nout//nproc
+        hi = (ip+1) * nout//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
                                           args=(childs[ip], {k: flist_out[k] 
                                                              for file_group in groups_per_proc[lo: hi]

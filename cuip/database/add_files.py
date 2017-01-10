@@ -1,4 +1,5 @@
 import os
+import csv
 from datetime import datetime
 from sqlalchemy import exc, update
 from cuip.cuip.utils import cuiplogger
@@ -6,7 +7,7 @@ from cuip.cuip.database.db_tables import ToFilesDB
 
 # logger
 logger = cuiplogger.cuipLogger(loggername="AddFiles", tofile=False)
-
+outpath = 'output/combined_images'
 class AddTask(object):
 
     def __init__(self, fgen):
@@ -54,13 +55,46 @@ class UpdateTask(object):
         """
         try:
             if self.flist:
-                upd = update(ToFilesDB).where(ToFilesDB.fname.in_(map(lambda x: x.split('/')[-1], self.flist))).values(self.values_to_update)
+                upd = update(ToFilesDB). \
+                    where(ToFilesDB.fname.in_([os.path.basename(x) \
+                                                   for x in self.flist])). \
+                                                   values(self.values_to_update)
             else:
                 logger.info("Updating "+str(self.values_to_update)+ "for all rows")
                 upd = update(ToFilesDB).values(self.values_to_update)
             session.execute(upd)
-            logger.info("Commiting")
             session.commit()
         except exc.IntegrityError:
-            logger.warning("Integrity Error: Possibly duplicate entry found. Rolling back the commit before exiting")
+            logger.warning("Integrity Error:"+ 
+                           "Possibly duplicate entry found."+
+                           "Rolling back the commit before exiting")
             session.rollback()
+
+class ToCSV(object):
+    
+    def __init__(self, where_clause=None, compare_value=None):
+        """
+        Parameters
+        ----------
+        where_clause: parameter/ column of the table
+        compare_value: list
+            list of values for comparing `where_clause`
+        """
+        logger.info("Checking attribute ")
+        self.where = where_clause
+        self.compare_value = compare_value
+
+    def __call__(self, session=None, *args, **kwargs):
+        logger.info("writing to csv")
+        query = session.query(ToFilesDB). \
+            filter(getattr(ToFilesDB, self.where, 'gid'). \
+                       in_(self.compare_value))
+        exc = session.execute(query)
+        result = exc.fetchall()
+        fh = open(os.path.join(outpath, '{0}.csv'. \
+                                   format(datetime.now(). \
+                                              isoformat())), 'wb')
+        outcsv = csv.writer(fh)
+        outcsv.writerow(exc.keys())
+        outcsv.writerows(result)
+        fh.close()
