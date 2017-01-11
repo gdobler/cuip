@@ -33,10 +33,9 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
                     [::binfac, ::binfac]
             elif ext == 'raw':
                 img_out[dr*ii:dr*(ii+1)] = np.fromfile(tfile, dtype=np.uint8) \
-                    .reshape(nrow, ncol, nwav)[::binfac, ::binfac]
+                    .reshape(nrow, ncol, nwav)[::binfac, ::binfac, ::-1]
             else:
                 logger.error("File format not supported "+str(tfile))
-        #newfname = os.path.join(dpath, os.path.basename(tflist[0]))[:-3]+"raw"
         newfname = os.path.join(dpath, "{0}.raw".format(gid))
         logger.info("Writing group: "+str(gid))
         img_out.tofile(newfname)
@@ -143,12 +142,10 @@ if __name__ == "__main__":
         ptemp, ctemp = multiprocessing.Pipe()
         parents.append(ptemp)
         childs.append(ctemp)
-        
-        #lo = ip * nout//nproc
-        #hi = (ip+1) * nout//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
                                           args=(childs[ip], {gid: flist_out[gid] 
-                                                             for gid in groups_per_proc[ip]},
+                                                             for gid \
+                                                                 in groups_per_proc[ip]},
                                                 outpath, binfac, nimg_per_file), 
                                           kwargs={"verbose":True}))
 
