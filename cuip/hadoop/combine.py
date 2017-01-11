@@ -61,9 +61,9 @@ if __name__ == "__main__":
     en = datetime(*[int(i) for i in en_date.split(".") + en_time.split(".")])
 
     # -- get all the files between st and en
-    if dbname:
+    if f_dbname:
         logger.info("Fetching file locations from database")
-        file_list = get_files(dbname, st, en)
+        file_list = get_files(f_dbname, st, en)
     else:
         logger.warning("Database not found. Process continue by scanning filesystem")
         logger.warning("This might take longer")
@@ -136,9 +136,7 @@ if __name__ == "__main__":
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     result = []
-    groups_per_proc = [flist_out.keys()[i : i + nout//nproc] 
-                       for i in range(0, len(flist_out.keys()), 
-                                      nout//nproc)]
+    groups_per_proc = [flist_out.keys()[i::nproc] for i in range(nproc)]
 
     logger.info("Starting stacking process")
     for ip in range(nproc):
@@ -146,12 +144,11 @@ if __name__ == "__main__":
         parents.append(ptemp)
         childs.append(ctemp)
         
-        lo = ip * nout//nproc
-        hi = (ip+1) * nout//nproc
+        #lo = ip * nout//nproc
+        #hi = (ip+1) * nout//nproc
         ps.append(multiprocessing.Process(target=merge_subset, 
-                                          args=(childs[ip], {k: flist_out[k] 
-                                                             for file_group in groups_per_proc[lo: hi]
-                                                             for k in file_group},
+                                          args=(childs[ip], {gid: flist_out[gid] 
+                                                             for gid in groups_per_proc[ip]},
                                                 outpath, binfac, nimg_per_file), 
                                           kwargs={"verbose":True}))
 
