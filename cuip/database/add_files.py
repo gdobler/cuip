@@ -91,10 +91,14 @@ class ToCSV(object):
                        in_(self.compare_value))
         exc = session.execute(query)
         result = exc.fetchall()
-        fh = open(os.path.join(outpath, '{0}.csv'. \
-                                   format(datetime.now(). \
-                                              isoformat())), 'wb')
-        outcsv = csv.writer(fh)
-        outcsv.writerow(exc.keys())
-        outcsv.writerows(result)
-        fh.close()
+        try:
+            with open(os.path.join(outpath, '{0}.csv'. \
+                                       format(datetime.now(). \
+                                                  strftime("%Y-%m-%d-%H-%M-%S"))
+                                   ), 'wb') as fh:
+                outcsv = csv.writer(fh)
+                outcsv.writerow(exc.keys())
+                outcsv.writerows(result)
+        except IOError as ioe:
+            logger.error("Cannot create csv file."+
+                         "Check folder permissions")
