@@ -65,7 +65,8 @@ class AddWeather(object):
                     merge_asof(dbf,
                                wdf[['Time', 'VisibilityMPH', 'Conditions', 'TemperatureF']],
                                left_on='timestamp', right_on='Time',
-                               tolerance=pd.Timedelta('1hour'))
+                               #tolerance=pd.Timedelta('3hours')
+                               )
                 self.update_database(combined_df, session, table)
         except ValueError as ve:
             logger.warning("Error merging dataframe: "+str(ve))
