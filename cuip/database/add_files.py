@@ -61,7 +61,11 @@ class UpdateTask(object):
                                                    values(self.values_to_update)
             else:
                 logger.info("Updating "+str(self.values_to_update)+ "for all rows")
-                upd = update(ToFilesDB).values(self.values_to_update)
+                upd = update(ToFilesDB).\
+                    where(getattr(ToFilesDB, 
+                                  self.values_to_update.keys()[0], 
+                                  'gid') != self.values_to_update.values()[0]). \
+                values(self.values_to_update)
             session.execute(upd)
             session.commit()
         except exc.IntegrityError:
