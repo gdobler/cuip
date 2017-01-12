@@ -5,11 +5,11 @@ import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
+import os
 from pyspark import SparkConf, SparkContext
 from pyspark.sql import SQLContext
 from pyspark.sql.types import StructType, StructField, StringType, DoubleType
 import numpy as np
-import os
 from itertools import chain
 
 APP_NAME = "Hadoop_Image_Cluster"
@@ -45,12 +45,12 @@ class HadoopImageCluster(object):
             reshaped as `(rows, cols, dims)`
         """
         conf = SparkConf().setAppName(APP_NAME)#.setMaster('local[*]')
-        conf = conf.set("spark.executor.memory", "8g")
-        conf = conf.set("spark.executor.cores", "20")
-        conf = conf.set("spark.driver.memory", "8g")
+        conf = conf.set("spark.executor.memory", "12g")
+        conf = conf.set("spark.executor.cores", "30")
+        conf = conf.set("spark.driver.memory", "12g")
         # To solve for losing spark executors
         conf = conf.set("spark.network.timeout", "36000000")
-        conf = conf.set("spark.yarn.executor.memoryOverhead", "600")
+        conf = conf.set("spark.yarn.executor.memoryOverhead", "6000")
         conf = conf.set("spark.dynamicAllocation.enabled", "true")
         conf = conf.set("spark.executor.heartbeatInterval", "36000000")
         if sc:
@@ -104,13 +104,17 @@ class HadoopImageCluster(object):
         img_size = nrows*ncols*ndims
 
         if fname:
-            imgpair = self.sc.binaryFiles(os.path.join(path, fname), minPartitions=100)
+            imgpair = self.sc.binaryFiles(os.path.join(path, fname), 
+                                          minPartitions=100)
         else:
             # /<path>/*.raw
-            imgpair = self.sc.binaryFiles(os.path.join(path, "*"+fname_ext), minPartitions=100)
+            imgpair = self.sc.binaryFiles(os.path.join(path, "*"+fname_ext), 
+                                          minPartitions=100)
         
         def _reshape(x):
-            return [x[i*img_size: (i+1)*img_size].reshape(nrows, ncols, ndims) for i in range(n)]
+            return [x[i*img_size: (i+1)*img_size].\
+                        reshape(nrows, ncols, ndims) \
+                        for i in range(n)]
     
         rdd = imgpair.map(lambda (x,y): (x, (np.asarray(bytearray(y), 
                                                         dtype=np.uint8))))
@@ -135,7 +139,9 @@ class HadoopImageCluster(object):
                 To see the output, rdd.collect()
 
         """
-        mean_rdd = self.img_rdd.mapValues(lambda x: [x[k][::bin, ::bin].mean(axis=(0,1)) for k in range(n)])
+        mean_rdd = self.img_rdd.mapValues(lambda x: \
+                                              [x[k][::bin, ::bin].mean(axis=(0,1))\
+                                                   for k in range(n)])
 
         if not asdf:
             return mean_rdd
@@ -173,7 +179,8 @@ class HadoopImageCluster(object):
             To see the output, rdd.collect()
 
         """
-        std_rdd = self.img_rdd.mapValues(lambda x: [x[k][::bin, ::bin].std() for k in range(n)])
+        std_rdd = self.img_rdd.mapValues(lambda x: [x[k][::bin, ::bin].std()\
+                                                        for k in range(n)])
         
         if not asdf:
             return std_rdd
@@ -203,7 +210,10 @@ class HadoopImageCluster(object):
         def _getbright(x):
             result = []
             for k in range(combined):
-                result.append((x[k][::bin,::bin] > (x[k][::bin,::bin].mean(axis=(0,1))+ n*(x[k][::bin,::bin].std()))).any(-1).sum())
+                result.append((x[k][::bin,::bin] > \
+                                   (x[k][::bin,::bin].mean(axis=(0,1))+ \
+                                        n*(x[k][::bin,::bin].std()))).\
+                                  any(-1).sum())
             return result
         
         bright = self.img_rdd.mapValues(_getbright)
@@ -212,18 +222,18 @@ class HadoopImageCluster(object):
 if __name__ == "__main__":
 #    f_path = '/user/mohitsharma44/uo_images/bad_combined'
 #    f_path = '/home/cusp/gdobler/cuip/cuip/hadoop/output/combined_images'
-    f_path = "/user/gdobler/temp_images_combined"
-    f_ext = ".raw"
-    binfac = 2
-    nrows = 2160 // binfac
-    ncols = 4096 // binfac
-    ndims = 3
-    combined = 16
-#    hic = HadoopImageCluster(sc=None, 
+    inpath   = '/user/mohitsharma44/input/combined_bin8/'
+    outpath  = '/user/mohitsharma44/output/'
+    file_ext = ".raw"
+    binfac   = 8
+    nrows    = 2160 // binfac
+    ncols    = 4096 // binfac
+    ndims    = 3
+    combined = 4 * binfac * binfac
     hic = HadoopImageCluster(sc=None, 
-                             path=f_path, 
+                             path=inpath, 
                              fname=None, 
-                             fname_ext=f_ext, 
+                             fname_ext=file_ext, 
                              n=combined, 
                              rows=nrows, 
                              cols=ncols, 
@@ -237,5 +247,4 @@ if __name__ == "__main__":
     def toStr(data):
         return ','.join(str(d) for d in data)
     out = res.map(toStr)
-#    out.saveAsTextFile('/user/mohitsharma44/dataplot.txt')
-    out.saveAsTextFile("dataplot.txt")
+    out.saveAsTextFile(os.path.join(outpath, "dataplot.txt_bin_8"))
