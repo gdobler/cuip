@@ -72,7 +72,7 @@ if __name__=='__main__':
 
     # -- initialize the the difference image list
     difs = np.zeros([lim] + list(raw.imgs[0].shape))
-    difs = mpc.Array('f', difs.flatten())
+    #difs = mpc.Array('f', difs.flatten())
 
     # -- loop through the images
     nps = min(mpc.cpu_count() - 1 or 1, MAXPROCESSES)
@@ -92,8 +92,8 @@ if __name__=='__main__':
         p.join()
 
     
-    difs = np.array(difs[:]).reshape([lim] + list(raw.imgs[0].shape))
-    print("after", difs[6])
+    #difs = np.array(difs[:]).reshape([lim] + list(raw.imgs[0].shape))
+    #print("after", difs[6])
 
 #Parallel(n_jobs=nps)(
 #        delayed(sum(raw.imgs[i-5:i+6]) for i in range(5, lim)))
