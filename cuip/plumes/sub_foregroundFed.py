@@ -42,22 +42,22 @@ class RawImages:
                     self.imsize['nbands']).astype(float)
         return rgb
 
-def subforg(difs, frames, i, j, fname):
+def subforg(difs, allframes, i, j, fname):
 #image loop
     #lf must be odd
-
-    fulllen = np.prod(frames[0].shape)
-    frames = frames[i-j:i+j+1]
+    fulllen = np.prod(allframes[0].shape)
+    frames = allframes[i-j:i+j+1]
     lf = int(len(frames) / 2)
+    
     #print('working on {0}'.format(i))
-    dif = (- 1.0 * np.concatenate([frames[:lf], 
-                                   frames[(lf+1):]]) + 1.0 * frames[lf])
+    dif = abs(- 1.0 * np.concatenate([frames[:lf], 
+                                   frames[(lf+1):]]) + 1.0 * frames[lf]).min(0)
     ##for jj, fr in enumerate(frames):
     ##    dif[jj] = 1.0 * raw.imgs[ii] - 1.0 * raw.imgs[fr]
-    
-    tmp = abs(dif).min(0)
+    #print(i,'here', frames.shape, dif.shape)#[0,0,0,:5])
+    #tmp = abs(dif).min(0)
     #difs[i*fulllen: i*fulllen+len(tmp.flatten())] = tmp.flatten()
-    np.save(OUTPUTDIR + "/" + fname + '_%04d.npy'%i, tmp)
+    np.save(OUTPUTDIR + "/" + fname + '_%04d.npy'%i, dif)
 
 if __name__=='__main__':
 
@@ -104,7 +104,7 @@ if __name__=='__main__':
 
 #for ii in range(5, lim):
 #    difs[ii] = subforg(ii, raw, difs[ii])
-    difs = difs[5:]
+#    difs = difs[5:]
 '''
 # -- save figures to file
 im = pl.imshow(difs[0][:,:,0],clim=[0,5])
