@@ -7,13 +7,12 @@ import pickle as pkl
 import pylab as pl
 from findImageSize import findsize
 from scipy.ndimage.filters import gaussian_filter as gf
-from joblib import Parallel, delayed
-from joblib.pool import has_shareable_memory
+
 #from plm_images import *
 
 MAXPROCESSES = 5e6
 OUTPUTDIR = "./outputs/"
-LIM = -1 #25
+LIM = 12 #25
 
 try:
     DST_WRITE = os.environ['DST_WRITE']
@@ -43,7 +42,7 @@ class RawImages:
                     self.imsize['nbands']).astype(float)
         return rgb
 
-def subforg(difs, frames, i, j):
+def subforg(difs, frames, i, j, fname):
 #image loop
     #lf must be odd
 
@@ -56,9 +55,9 @@ def subforg(difs, frames, i, j):
     ##for jj, fr in enumerate(frames):
     ##    dif[jj] = 1.0 * raw.imgs[ii] - 1.0 * raw.imgs[fr]
     
-    tmp = abs(dif).min(0).flatten()
-    #difs[i*fulllen: i*fulllen+len(tmp)] = tmp
-    difs.tofile(OUTPUTDIR + "/" + fname + '_%04d.npy'%i)
+    tmp = abs(dif).min(0)
+    #difs[i*fulllen: i*fulllen+len(tmp.flatten())] = tmp.flatten()
+    np.save(OUTPUTDIR + "/" + fname + '_%04d.npy'%i, tmp)
 
 if __name__=='__main__':
 
@@ -85,7 +84,7 @@ if __name__=='__main__':
 #              itertools.repeat(5)))
 #pool.close
     print("before ",difs[6])
-    processes = [mpc.Process(target=subforg, args=(difs, raw.imgs, i, 5)) for i in range(5, lim)]
+    processes = [mpc.Process(target=subforg, args=(difs, raw.imgs, i, 5, 'tmp')) for i in range(5, lim)]
 
     for p in processes:
         p.start()
@@ -93,7 +92,7 @@ if __name__=='__main__':
         p.join()
 
     
-    #difs = np.array(difs[:]).reshape([lim] + list(raw.imgs[0].shape))
+    difs = np.array(difs[:]).reshape([lim] + list(raw.imgs[0].shape))
     print("after", difs[6])
 
 #Parallel(n_jobs=nps)(
