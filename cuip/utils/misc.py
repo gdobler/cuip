@@ -81,7 +81,7 @@ def get_files(dbname, start_datetime, end_datetime):
     querry  = "SELECT fname, fpath \
                FROM {tbname}     \
                WHERE timestamp     \
-               BETWEEN %(start)s and %(end)s;".format(tbname=f_tbname)
+               BETWEEN %(start)s and %(end)s ORDER BY timestamp;".format(tbname=f_tbname)
     cur.execute(querry, {'start': start_datetime,
                          'end'  : end_datetime})
     rows    = cur.fetchall()
