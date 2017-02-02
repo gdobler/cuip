@@ -78,7 +78,7 @@ def get_files(dbname, start_datetime, end_datetime):
     f_tbname = os.getenv("CUIP_TBNAME")
     conn    = psycopg2.connect("dbname='%s'"%(dbname))
     cur     = conn.cursor()
-    querry  = "SELECT fname, fpath \
+    querry  = "SELECT fname, fpath, fnumber \
                FROM {tbname}     \
                WHERE timestamp     \
                BETWEEN %(start)s and %(end)s ORDER BY timestamp;".format(tbname=f_tbname)
@@ -86,7 +86,7 @@ def get_files(dbname, start_datetime, end_datetime):
                          'end'  : end_datetime})
     rows    = cur.fetchall()
     # join filename with filepath
-    files   = [os.path.join(x[1], x[0]) for x in rows]
+    files   = [(os.path.join(x[1], x[0]), x[2]) for x in rows]
     return files
 
 def _pathrange(basepath, start, end, delta):
