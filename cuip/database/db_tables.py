@@ -10,7 +10,7 @@ class ToFilesDB(Base):
 
 
     __tablename__ = os.getenv("CUIP_TBNAME")
-
+    
     gid           = Column('gid',         Integer)
     fname         = Column('fname',       String(length=100, convert_unicode=True))
     fpath         = Column('fpath',       String(length=100, convert_unicode=True))
@@ -26,6 +26,7 @@ class ToFilesDB(Base):
     coffset       = Column('coffset',     Integer)
     angle         = Column('angle',       Float)
     usable        = Column('usable',      Boolean)
+    fnumber       = Column(Integer, Sequence('fnumber'))
 
     __table_args__ = (PrimaryKeyConstraint('fpath', 'fname'), 
                       {})
