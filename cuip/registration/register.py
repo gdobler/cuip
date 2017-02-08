@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import time
 import numpy as np
 import matplotlib.pyplot as plt
+import scipy.ndimage as nd
 import scipy.ndimage.measurements as spm
 import uo_tools as ut
 
@@ -11,9 +13,6 @@ def locate_sources(img, hpf=False):
     Extract sources from an image.
     """
 
-    # -- create highpass filtered images
-#    hp = ut.high_pass_filter(img, 10)
-    
     # -- convert to luminosity (high pass filter if desired)
     hpL = (img if not hpf else ut.high_pass_filter(img, 10)).mean(-1)
 
@@ -73,7 +72,9 @@ if __name__=="__main__":
     
         # -- get positions of the sources
         print("getting positions of apropriately sized sources...")
+        t0 = time.time()
         rr1, cc1 = locate_sources(img1)
+        print("source extraction time: {0}s".format(time.time()-t0))
 
     # -- get the catalog positions and distances (squared)
     rr_cat, cc_cat = get_catalog()
@@ -82,6 +83,7 @@ if __name__=="__main__":
                     (cc_cat[:,np.newaxis] - cc_cat)**2)
 
     # -- find the pairwise distance (squared) of all points
+    t0 = time.time()
     dist = np.sqrt((rr1[:, np.newaxis] - rr1)**2 + 
                    (cc1[:,np.newaxis] - cc1)**2)
 
@@ -172,9 +174,76 @@ if __name__=="__main__":
     # -- choose the closest delta theta
     guess = np.array(good0126[np.abs(dtheta-dtheta_cat).argmin()])
 
-    # -- plot guess for points 0,1,2,6
+    print("pattern localization time is {0}".format(time.time() - t0))
+
+
+
+    # -- calculate the offset and rotation
+    t0 = time.time()
+    rrr0, ccc0 = rr_cat[np.array([0,1,2,6])], cc_cat[np.array([0,1,2,6])]
+    rrr1, ccc1 = rr1[guess], cc1[guess]
+
+    roff  = img0.shape[0]//2
+    coff  = img0.shape[1]//2
+    rrr0 -= roff
+    rrr1 -= roff
+    ccc0 -= coff
+    ccc1 -= coff
+
+    mones      = np.zeros(rrr0.size*2+1)
+    mones[::2] = 1.0
+
+    pm         = np.zeros([rrr0.size*2,4])
+    pm[::2,0]  = rrr0
+    pm[1::2,0] = ccc0
+    pm[::2,1]  = -ccc0
+    pm[1::2,1] = rrr0
+    pm[:,2]    = mones[:-1]
+    pm[:,3]    = mones[1:]
+
+    bv         = np.zeros([rrr0.size*2])
+    bv[::2]    = rrr1
+    bv[1::2]   = ccc1
+
+    pmTpm = np.dot(pm.T,pm)
+    av    = np.dot(np.linalg.inv(pmTpm),np.dot(pm.T,bv))
+
+    dr, dc = av[-2:]
+    dtheta = np.arctan2(av[1],av[0])*180./np.pi
+
+    print("time to solve for orientation: {0}s".format(time.time()-t0))
+
+    # -- test rotation
+    rot   = nd.interpolation.rotate(img0.mean(-1), dtheta, reshape=False)
+    rot   = nd.interpolation.shift(rot, [dr,dc])
+    scl1  = img1.mean(-1)
+    scl1 *= rot.mean()/scl1.mean()
+
+    comp  = np.dstack([scl1.clip(0,255).astype(np.uint8),
+                       np.zeros(img1.shape[:2],dtype=np.uint8),
+                       rot.clip(0,255).astype(np.uint8)])
+
+    # -- overlay
+    plt.close("all")
     fig, ax = plt.subplots()
-    ax.plot(cc1[guess], rr1[guess], 'ro')
-    ax.imshow(img1)
+    ax.imshow(comp)
+    ax.axis("off")
     fig.canvas.draw()
     plt.show()
+
+
+    # figure()
+    # plot(cc1[p0s],rr1[p0s],'ro',ms=16)
+    # plot(cc1[p1s],rr1[p1s],'bo',ms=13)
+    # plot(cc1[p2s],rr1[p2s],'go',ms=10)
+    # plot(cc1[p6s],rr1[p6s],'mo',ms=7)
+    # imshow(img1)
+
+
+
+    # # -- plot guess for points 0,1,2,6
+    # fig, ax = plt.subplots()
+    # ax.plot(cc1[guess], rr1[guess], 'ro')
+    # ax.imshow(img1)
+    # fig.canvas.draw()
+    # plt.show()
