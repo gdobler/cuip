@@ -23,6 +23,9 @@ ipynb_checkpoin[ts]/*
 output/
 no_share/
 
+# Temporary data directories
+data
+
 # Project files
 .ropeproject
 .project
