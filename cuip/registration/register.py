@@ -7,6 +7,7 @@ import matplotlib.pyplot as plt
 import scipy.ndimage as nd
 import scipy.ndimage.measurements as spm
 import uo_tools as ut
+from cuip.cuip.utils.misc import get_files
 
 def locate_sources(img, hpf=False):
     """
@@ -59,22 +60,36 @@ def get_catalog():
 
 if __name__=="__main__":
 
-    try:
-        img0
-    except:
-        # -- read in the images
-        print("reading raw images...")
-        dpath  = "../data"
-        fname0 = "oct08_2013-10-25-175504-70917.raw"
-        fname1 = "temp__2014-10-31-184833-19155.raw"
-        img0   = ut.read_raw(dpath, fname0)
-        img1   = ut.read_raw(dpath, fname1)
+    # -- get the file list
+    st = "2013.11.01"
+    en = "2013.12.31"
+    db = os.getenv("CUIP_DBNAME")
+    t0 = time.time()
+    fl = get_files(db, st, en)
+    print("time to query the filelist database: {0}s".format(time.time() - t0))
+    img1 = fl[0][0]
+
+    dpath  = "../data"
+    fname0 = "oct08_2013-10-25-175504-70917.raw"
+    img0   = ut.read_raw(dpath, fname0)
+
+
+    # try:
+    #     img0
+    # except:
+    #     # -- read in the images
+    #     print("reading raw images...")
+    #     dpath  = "../data"
+    #     fname0 = "oct08_2013-10-25-175504-70917.raw"
+    #     fname1 = "temp__2014-10-31-184833-19155.raw"
+    #     img0   = ut.read_raw(dpath, fname0)
+    #     img1   = ut.read_raw(dpath, fname1)
     
-        # -- get positions of the sources
-        print("getting positions of apropriately sized sources...")
-        t0 = time.time()
-        rr1, cc1 = locate_sources(img1)
-        print("source extraction time: {0}s".format(time.time()-t0))
+    #     # -- get positions of the sources
+    #     print("getting positions of apropriately sized sources...")
+    #     t0 = time.time()
+    #     rr1, cc1 = locate_sources(img1)
+    #     print("source extraction time: {0}s".format(time.time()-t0))
 
     # -- get the catalog positions and distances (squared)
     rr_cat, cc_cat = get_catalog()
