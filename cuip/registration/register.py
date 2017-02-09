@@ -59,14 +59,14 @@ def get_catalog():
 
 
 
-def register(img, ref):
+def register(img):
     """
-    Register an image to a reference image.
+    Register an image to the catalog.
     """
 
     # -- extract sources
     t0       = time.time()
-    rr1, cc1 = locate_sources(img1)
+    rr1, cc1 = locate_sources(img)
     print("source extraction time: {0}s".format(time.time()-t0))
 
     # -- get the catalog positions and distances (squared)
@@ -166,18 +166,15 @@ def register(img, ref):
 
     # -- choose the closest delta theta
     guess = np.array(good0126[np.abs(dtheta-dtheta_cat).argmin()])
-
     print("pattern localization time is {0}".format(time.time() - t0))
-
-
 
     # -- calculate the offset and rotation
     t0 = time.time()
     rrr0, ccc0 = rr_cat[np.array([0,1,2,6])], cc_cat[np.array([0,1,2,6])]
     rrr1, ccc1 = rr1[guess], cc1[guess]
 
-    roff  = img0.shape[0]//2
-    coff  = img0.shape[1]//2
+    roff  = img.shape[0]//2
+    coff  = img.shape[1]//2
     rrr0 -= roff
     rrr1 -= roff
     ccc0 -= coff
@@ -219,23 +216,25 @@ if __name__=="__main__":
     fl = get_files(db, st, en)
     print("time to query the filelist database: {0}s".format(time.time() - t0))
 
+    # -- load the reference image
+    rfile = os.path.join(os.environ["CUIP_2013"], "2013", "11", "15", 
+                         "19.03.48", "oct08_2013-10-25-175504-182135.raw")
+    ref   = ut.read_raw(rfile)
+
     # -- open the images
-    dpath   = "../data"
-    fname0  = "oct08_2013-10-25-175504-70917.raw"
-    img0    = ut.read_raw(dpath, fname0)
-    img1    = ut.read_raw(dpath, fl[0][0])
+    img  = ut.read_raw(fl[0][0])
 
     # -- register
-    dr, dc, dt = register(img0, img1)
+    dr, dc, dt = register(img)
 
     # -- test registration
-    rot   = nd.interpolation.rotate(img0.mean(-1), dt, reshape=False)
-    rot   = nd.interpolation.shift(rot, [dr,dc])
-    scl1  = img1.mean(-1)
-    scl1 *= rot.mean()/scl1.mean()
+    rot   = nd.interpolation.rotate(img.mean(-1), dt, reshape=False)
+    rot   = nd.interpolation.shift(rot, (dr, dc))
+    scl1  = ref.mean(-1)
+    scl1 *= rot.mean() / ref.mean()
 
     comp  = np.dstack([scl1.clip(0,255).astype(np.uint8),
-                       np.zeros(img1.shape[:2],dtype=np.uint8),
+                       np.zeros(img.shape[:2],dtype=np.uint8),
                        rot.clip(0,255).astype(np.uint8)])
 
     # -- overlay
@@ -245,4 +244,3 @@ if __name__=="__main__":
     ax.axis("off")
     fig.canvas.draw()
     plt.show()
-
