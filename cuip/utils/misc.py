@@ -79,7 +79,7 @@ def get_files(dbname, start_datetime, end_datetime, df=False):
     f_tbname = os.getenv("CUIP_TBNAME")
     conn     = psycopg2.connect("dbname='%s'"%(dbname))
     cur      = conn.cursor()
-    query    = "SELECT fname, fpath, fnumber \
+    query    = "SELECT fname, fpath, fnumber, timestamp \
                 FROM {tbname}     \
                 WHERE timestamp     \
                 BETWEEN %(start)s and %(end)s ORDER BY timestamp;" \
