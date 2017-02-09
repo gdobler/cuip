@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
+import os
 import time
 import numpy as np
 import matplotlib.pyplot as plt
@@ -58,21 +59,10 @@ def get_catalog():
 
 
 
-if __name__=="__main__":
-
-    # -- get the file list
-    st = "2013.11.01"
-    en = "2013.12.31"
-    db = os.getenv("CUIP_DBNAME")
-    t0 = time.time()
-    fl = get_files(db, st, en)
-    print("time to query the filelist database: {0}s".format(time.time() - t0))
-
-    # -- open the images
-    dpath   = "../data"
-    fname0  = "oct08_2013-10-25-175504-70917.raw"
-    img0    = ut.read_raw(dpath, fname0)
-    img1    = ut.read_raw(dpath, fl[0][0])
+def register(img, ref):
+    """
+    Register an image to a reference image.
+    """
 
     # -- extract sources
     t0       = time.time()
@@ -216,8 +206,30 @@ if __name__=="__main__":
 
     print("time to solve for orientation: {0}s".format(time.time()-t0))
 
-    # -- test rotation
-    rot   = nd.interpolation.rotate(img0.mean(-1), dtheta, reshape=False)
+    return dr, dc, dtheta
+
+
+if __name__=="__main__":
+
+    # -- get the file list
+    st = "2013.11.01"
+    en = "2013.12.31"
+    db = os.getenv("CUIP_DBNAME")
+    t0 = time.time()
+    fl = get_files(db, st, en)
+    print("time to query the filelist database: {0}s".format(time.time() - t0))
+
+    # -- open the images
+    dpath   = "../data"
+    fname0  = "oct08_2013-10-25-175504-70917.raw"
+    img0    = ut.read_raw(dpath, fname0)
+    img1    = ut.read_raw(dpath, fl[0][0])
+
+    # -- register
+    dr, dc, dt = register(img0, img1)
+
+    # -- test registration
+    rot   = nd.interpolation.rotate(img0.mean(-1), dt, reshape=False)
     rot   = nd.interpolation.shift(rot, [dr,dc])
     scl1  = img1.mean(-1)
     scl1 *= rot.mean()/scl1.mean()
@@ -234,19 +246,3 @@ if __name__=="__main__":
     fig.canvas.draw()
     plt.show()
 
-
-    # figure()
-    # plot(cc1[p0s],rr1[p0s],'ro',ms=16)
-    # plot(cc1[p1s],rr1[p1s],'bo',ms=13)
-    # plot(cc1[p2s],rr1[p2s],'go',ms=10)
-    # plot(cc1[p6s],rr1[p6s],'mo',ms=7)
-    # imshow(img1)
-
-
-
-    # # -- plot guess for points 0,1,2,6
-    # fig, ax = plt.subplots()
-    # ax.plot(cc1[guess], rr1[guess], 'ro')
-    # ax.imshow(img1)
-    # fig.canvas.draw()
-    # plt.show()
