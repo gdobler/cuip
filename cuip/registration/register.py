@@ -39,7 +39,7 @@ def locate_sources(img, hpf=False):
 
 
 
-def get_catalog():
+def get_catalog(ref="dobler2015"):
     """
     Return the row/col positions of the catalog sources.
 
@@ -48,15 +48,24 @@ def get_catalog():
     with an UNSATURATED image!!!
     """
 
-    rr_cat = np.array([1529.53134328, 1492.16197183, 1490.35830619,
-                       1552.85046729, 1587.90461538, 1618.61538462,
-                       1651.09454545])
-    cc_cat = np.array([1384.45373134, 1378.35211268, 1434.78175896,
-                       1480.40809969, 1570.04307692, 1629.33216783,
-                       1753.47272727])
+    if ref == "dobler2015":
+        rr_cat = np.array([1532.1061180689926, 1495.0421522225859, 
+                           1492.9830430088966, 1555.1681412623122, 
+                           1590.5848197377677, 1622.2951016285822, 
+                           1654.0053835193969])
+        cc_cat = np.array([1383.8797088081544, 1376.4669156388732, 
+                           1433.2983299366967, 1478.5987326378604, 
+                           1569.1995380401881, 1628.5018833944389, 
+                           1752.4602580585324])
+    elif ref == "devel":
+        rr_cat = np.array([1529.53134328, 1492.16197183, 1490.35830619,
+                           1552.85046729, 1587.90461538, 1618.61538462,
+                           1651.09454545])
+        cc_cat = np.array([1384.45373134, 1378.35211268, 1434.78175896,
+                           1480.40809969, 1570.04307692, 1629.33216783,
+                           1753.47272727])
 
     return rr_cat, cc_cat
-
 
 
 def register(img):
@@ -107,7 +116,6 @@ def register(img):
         sub   = sub[tind]
         p1ind = p1ind[tind]
 
-
     sub    = dist.copy()
     dcat   = np.sqrt(((rr_cat[2] - rr_cat)**2 + (cc_cat[2] - cc_cat)**2))
     dcat   = dcat[dcat>0]
@@ -125,7 +133,6 @@ def register(img):
         sub   = sub[tind]
         p6ind = p6ind[tind]
 
-
     dcat0 = np.sqrt(((rr_cat[0] - rr_cat)**2 + (cc_cat[0] - cc_cat)**2))
     dcat1 = np.sqrt(((rr_cat[1] - rr_cat)**2 + (cc_cat[1] - cc_cat)**2))
     dcat2 = np.sqrt(((rr_cat[2] - rr_cat)**2 + (cc_cat[2] - cc_cat)**2))
@@ -133,48 +140,48 @@ def register(img):
     good01 = []
     for ii in p0ind:
         for jj in p1ind:
-            if np.abs(dist[ii,jj]-dcat0[1])<10:
-                good01.append([ii,jj])
+            if np.abs(dist[ii,jj] - dcat0[1]) < 10:
+                good01.append([ii, jj])
 
     good012 = []
     for ii,jj in good01:
         for kk in p2ind:
-            flag02 = np.abs(dist[ii,kk]-dcat0[2])<10
-            flag12 = np.abs(dist[jj,kk]-dcat1[2])<10
+            flag02 = np.abs(dist[ii, kk] - dcat0[2]) < 10
+            flag12 = np.abs(dist[jj, kk] - dcat1[2]) < 10
             if flag02 and flag12:
-                good012.append([ii,jj,kk])
+                good012.append([ii, jj, kk])
 
     good0126 = []
     for ii,jj,kk in good012:
         for mm in p6ind:
-            flag06 = np.abs(dist[ii,mm]-dcat0[6])<10
-            flag16 = np.abs(dist[jj,mm]-dcat1[6])<10
-            flag26 = np.abs(dist[kk,mm]-dcat2[6])<10
+            flag06 = np.abs(dist[ii, mm] - dcat0[6]) < 10
+            flag16 = np.abs(dist[jj, mm] - dcat1[6]) < 10
+            flag26 = np.abs(dist[kk, mm] - dcat2[6]) < 10
             if flag06 and flag16 and flag26:
-                good0126.append([ii,jj,kk,mm])
+                good0126.append([ii, jj, kk, mm])
 
     p0s, p1s, p2s, p6s = np.array(good0126).T
 
     # -- find the delta angles of the first 2 pairs
-    theta01 = np.arccos((rr1[p0s]-rr1[p1s])/dist[p0s,p1s])
-    theta02 = np.arccos((rr1[p0s]-rr1[p2s])/dist[p0s,p2s])
-    dtheta  = (theta01 - theta02)*180./np.pi
+    theta01 = np.arccos((rr1[p0s] - rr1[p1s]) / dist[p0s, p1s])
+    theta02 = np.arccos((rr1[p0s] - rr1[p2s]) / dist[p0s, p2s])
+    dtheta  = (theta01 - theta02) * 180. / np.pi
 
-    theta01_cat = np.arccos((rr_cat[0]-rr_cat[1])/dcat0[1])
-    theta02_cat = np.arccos((rr_cat[0]-rr_cat[2])/dcat0[2])
-    dtheta_cat  = (theta01_cat - theta02_cat)*180./np.pi
+    theta01_cat = np.arccos((rr_cat[0] - rr_cat[1]) / dcat0[1])
+    theta02_cat = np.arccos((rr_cat[0] - rr_cat[2]) / dcat0[2])
+    dtheta_cat  = (theta01_cat - theta02_cat) * 180. / np.pi
 
     # -- choose the closest delta theta
-    guess = np.array(good0126[np.abs(dtheta-dtheta_cat).argmin()])
+    guess = np.array(good0126[np.abs(dtheta - dtheta_cat).argmin()])
     print("pattern localization time is {0}".format(time.time() - t0))
 
     # -- calculate the offset and rotation
     t0 = time.time()
-    rrr0, ccc0 = rr_cat[np.array([0,1,2,6])], cc_cat[np.array([0,1,2,6])]
+    rrr0, ccc0 = rr_cat[np.array([0, 1, 2, 6])], cc_cat[np.array([0, 1, 2, 6])]
     rrr1, ccc1 = rr1[guess], cc1[guess]
 
-    roff  = img.shape[0]//2
-    coff  = img.shape[1]//2
+    roff  = img.shape[0] // 2
+    coff  = img.shape[1] // 2
     rrr0 -= roff
     rrr1 -= roff
     ccc0 -= coff
@@ -195,15 +202,25 @@ def register(img):
     bv[::2]    = rrr1
     bv[1::2]   = ccc1
 
-    pmTpm = np.dot(pm.T,pm)
-    av    = np.dot(np.linalg.inv(pmTpm),np.dot(pm.T,bv))
+    pmTpm = np.dot(pm.T, pm)
+    av    = np.dot(np.linalg.inv(pmTpm), np.dot(pm.T, bv))
 
     dr, dc = av[-2:]
-    dtheta = np.arctan2(av[1],av[0])*180./np.pi
+    dtheta = np.arctan2(av[1],av[0]) * 180. / np.pi
 
     print("time to solve for orientation: {0}s".format(time.time()-t0))
 
-    return dr, dc, dtheta
+    return -dr, -dc, -dtheta # minus sign registers *to* the catalog
+
+
+def get_reference_image():
+    """
+    Return the reference image for the Dobler et al. 2015 catalog.
+    """
+
+    return ut.read_raw(os.path.join(os.environ["CUIP_2013"], "2013", "11", 
+                                    "15", "19.03.48", 
+                                    "oct08_2013-10-25-175504-182135.raw"))
 
 
 if __name__=="__main__":
@@ -217,9 +234,7 @@ if __name__=="__main__":
     print("time to query the filelist database: {0}s".format(time.time() - t0))
 
     # -- load the reference image
-    rfile = os.path.join(os.environ["CUIP_2013"], "2013", "11", "15", 
-                         "19.03.48", "oct08_2013-10-25-175504-182135.raw")
-    ref   = ut.read_raw(rfile)
+    ref = get_reference_image()
 
     # -- open the images
     img  = ut.read_raw(fl[0][0])
