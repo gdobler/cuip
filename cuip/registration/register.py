@@ -74,9 +74,7 @@ def register(img):
     """
 
     # -- extract sources
-    t0       = time.time()
     rr1, cc1 = locate_sources(img)
-    print("source extraction time: {0}s".format(time.time()-t0))
 
     # -- get the catalog positions and distances (squared)
     rr_cat, cc_cat = get_catalog()
@@ -85,7 +83,6 @@ def register(img):
                     (cc_cat[:,np.newaxis] - cc_cat)**2)
 
     # -- find the pairwise distance (squared) of all points
-    t0 = time.time()
     dist = np.sqrt((rr1[:, np.newaxis] - rr1)**2 + 
                    (cc1[:,np.newaxis] - cc1)**2)
 
@@ -173,10 +170,8 @@ def register(img):
 
     # -- choose the closest delta theta
     guess = np.array(good0126[np.abs(dtheta - dtheta_cat).argmin()])
-    print("pattern localization time is {0}".format(time.time() - t0))
 
     # -- calculate the offset and rotation
-    t0 = time.time()
     rrr0, ccc0 = rr_cat[np.array([0, 1, 2, 6])], cc_cat[np.array([0, 1, 2, 6])]
     rrr1, ccc1 = rr1[guess], cc1[guess]
 
@@ -207,8 +202,6 @@ def register(img):
 
     dr, dc = av[-2:]
     dtheta = np.arctan2(av[1],av[0]) * 180. / np.pi
-
-    print("time to solve for orientation: {0}s".format(time.time()-t0))
 
     return -dr, -dc, -dtheta # minus sign registers *to* the catalog
 
