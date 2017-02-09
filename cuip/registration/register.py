@@ -223,31 +223,19 @@ def get_reference_image():
                                     "oct08_2013-10-25-175504-182135.raw"))
 
 
-if __name__=="__main__":
+def plot_registration(img, ref, params):
+    """
+    Overlay the results of a registration.
+    """
 
-    # -- get the file list
-    st = "2013.11.01"
-    en = "2013.12.31"
-    db = os.getenv("CUIP_DBNAME")
-    t0 = time.time()
-    fl = get_files(db, st, en)
-    print("time to query the filelist database: {0}s".format(time.time() - t0))
-
-    # -- load the reference image
-    ref = get_reference_image()
-
-    # -- open the images
-    img  = ut.read_raw(fl[0][0])
-
-    # -- register
-    dr, dc, dt = register(img)
+    # -- extract parameters
+    dr, dc, dt = params
 
     # -- test registration
     rot   = nd.interpolation.rotate(img.mean(-1), dt, reshape=False)
     rot   = nd.interpolation.shift(rot, (dr, dc))
     scl1  = ref.mean(-1)
     scl1 *= rot.mean() / ref.mean()
-
     comp  = np.dstack([scl1.clip(0,255).astype(np.uint8),
                        np.zeros(img.shape[:2],dtype=np.uint8),
                        rot.clip(0,255).astype(np.uint8)])
@@ -259,3 +247,25 @@ if __name__=="__main__":
     ax.axis("off")
     fig.canvas.draw()
     plt.show()
+
+    return
+
+
+if __name__=="__main__":
+
+    # -- get the file list
+    st = "2013.11.01"
+    en = "2013.12.31"
+    db = os.getenv("CUIP_DBNAME")
+    t0 = time.time()
+    fl = get_files(db, st, en)
+    print("time to query the filelist database: {0}s".format(time.time() - t0))
+
+    # -- open the images
+    img  = ut.read_raw(fl[0][0])
+
+    # -- register
+    params = register(img)
+
+    # -- plot the result
+    plot_registration(img, get_reference_image(), params)
