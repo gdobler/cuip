@@ -24,6 +24,9 @@ output/
 no_share/
 data/
 
+# Temporary data directories
+data
+
 # Project files
 .ropeproject
 .project
