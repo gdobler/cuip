@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
-import dst13
+from uo_tools import read_raw
 from scipy.ndimage import imread
 
 # -- open the images
@@ -11,7 +11,7 @@ path1  = "/uofs50tb_gpfs/archive/uods1311/2014/01/02/23.00.13"
 fname0 = sorted(os.listdir(path0))[0]
 fname1 = sorted(os.listdir(path1))[0]
 img0   = imread(os.path.join(path0,fname0))
-img1   = dst13.read_raw(fname1,path1)
+img1   = read_raw(fname1,path1)
 
 # -- get mean and std
 avgs0 = img0.mean(0).mean(0)
