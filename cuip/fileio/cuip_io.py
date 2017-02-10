@@ -98,5 +98,5 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
                             for fpath in flist]
             # ToDo: Optimize this ..
             return [[(x[0], zip(fnames, x[1])) for fnames in filenames] for x in img_list][0]
-        except Exception as ex:
-            logger.error("Error loading flist: "+str(ex))
+    except Exception as ex:
+        logger.error("Error loading flist: "+str(ex))
