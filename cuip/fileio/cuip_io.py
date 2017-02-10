@@ -1,19 +1,19 @@
 import os
 import numpy as np
-from cuip.cuip.utils import cuiplogger
-from cuip.cuip.utils.error_handler import exception
-
-logger = cuiplogger.cuipLogger(loggername="IO", tofile=False)
+#from cuip.cuip.utils import cuiplogger
+#from cuip.cuip.utils.error_handler import exception
+#logger = cuiplogger.cuipLogger(loggername="IO", tofile=False)
 
 def _reshape(arr, nrows, ncols, nwavs, nstack=1):
     """
     Reshape the numpy array into 
     nstacks of nrows, ncols and nwavs
     """
-    @exception(logger)
-    return arr.reshape(nstack, nrows, ncols, nwavs)
+#    @exception(logger)
+    reshaped_img = arr.reshape(nstack, nrows, ncols, nwavs)
+    return reshaped_img
 
-def fromfile(fpath, fname, nrows, ncols, nwavs, nstack=1, filenames, dtype=np.uint8, sc):
+def fromfile(fpath, fname, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
     """
     Read image file to a rdd as binary file if sc is passed
     else return the file content as a numpy array
@@ -42,17 +42,23 @@ def fromfile(fpath, fname, nrows, ncols, nwavs, nstack=1, filenames, dtype=np.ui
     -------
     numpy.array OR spark RDD
     """
-    @exception(logger)
+    #binfac = 4
+    #nrows = 2160 // binfac
+    #ncols = 4096 // binfac
+    #ndims = 3
+    #combined = 4 * binfac * binfac
+#    @exception(logger)
     if sc:
         imgrdd = sc.binaryFiles(os.path.join(fpath, fname))
         img_byte = imgrdd.map(lambda (x,y): (x, (np.asarray(bytearray(y), dtype=np.uint8))))
-        img_res = img_byte.mapValues(_reshape(nstack, nrows, ncols, nwavs))
+        img_res = img_byte.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
         return img_res.map(lambda x: zip(filenames, x[1]))
     else:
-        return np.fromfile(os.path.join(fpath, fname), dtype).\
+        img = np.fromfile(os.path.join(fpath, fname), dtype).\
             reshape(nstack, nrows, ncols, nwavs)
+        return zip(filenames, img)
 
-def fromflist(flist, nrows, ncols, nwavs, nstack=1, filenames, dtype=np.uint8, sc):
+def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
     """
     Read files from a list as a binary file if sc is passed
     else return a list of tuple with filename and the binary
@@ -82,15 +88,16 @@ def fromflist(flist, nrows, ncols, nwavs, nstack=1, filenames, dtype=np.uint8, s
         a tuple of filename corresponding to the numpy array
         """
         yield zip(filenames[split], [x for i in iterator for x in i[1] ])
-    
-    @exception(logger)
+#    @exception(logger)
     if sc:
         imgrdd   = sc.binaryFiles(",".join(flist))
         img_byte = imgrdd.map(lambda (x,y): (x, (np.asarray(bytearray(y), dtype=np.uint8))))
-        img_res  = imgrdd.mapValues(_reshape(nstack, nrows, ncols, nwavs))
+        img_res  = imgrdd.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
         return img_res.mapPartitionsWithIndex(_map_filenames)
     else:
-        return [(fpath, np.fromfile(fpath, dtype).\
-                     reshape(nstack, nrows, ncols, nwavs))\
-                    for fpath in flist]
+        img_list = [(fpath, np.fromfile(fpath, dtype).\
+                         reshape(nstack, nrows, ncols, nwavs))\
+                        for fpath in flist]
+        # ToDo: Optimize this ..
+        return [[(x[0], zip(fnames, x[1])) for fnames in filenames] for x in img_list][0]
 
