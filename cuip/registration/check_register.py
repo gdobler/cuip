@@ -7,6 +7,27 @@ import pandas as pd
 import uo_tools as ut
 import matplotlib.pyplot as plt
 
+def view_images(imgs, fac=4):
+    plt.close("all")
+
+    xs = 8.0
+    ys = xs * float(imgs[0].shape[0]) / float(imgs[0].shape[1])
+    fig, ax = plt.subplots(figsize=(xs, ys))
+    fig.subplots_adjust(0, 0, 1, 1)
+    ax.axis("off")
+    im = ax.imshow(imgs[0][::fac, ::fac])
+    fig.canvas.draw()
+    plt.ion()
+    plt.show()
+
+    for img in imgs:
+        im.set_data(img[::fac, ::fac])
+        fig.canvas.draw()
+        plt.pause(1e-3)
+
+    return
+
+
 # -- read in the data
 for ii in range(10):
     if ii == 0:
@@ -29,18 +50,3 @@ bad  = data[bind]
 ex   = bad[-100:]
 imgs = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in ex.iterrows()]
 
-xs  = 8.0
-ys  = xs * float(imgs[0].shape[0]) / float(imgs[0].shape[1])
-fac = 4
-fig, ax = plt.subplots(figsize=(xs, ys))
-fig.subplots_adjust(0, 0, 1, 1)
-ax.axis("off")
-im = ax.imshow(imgs[0][::fac, ::fac])
-fig.canvas.draw()
-plt.ion()
-plt.show()
-
-for img in imgs:
-    im.set_data(img[::fac, ::fac])
-    fig.canvas.draw()
-    plt.pause(1e-3)
