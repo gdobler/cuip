@@ -7,7 +7,7 @@ import pandas as pd
 import uo_tools as ut
 import matplotlib.pyplot as plt
 
-def view_images(imgs, fac=4):
+def view_images(imgs, fac=4, wait=1e-3):
     plt.close("all")
 
     xs = 8.0
@@ -23,7 +23,7 @@ def view_images(imgs, fac=4):
     for img in imgs:
         im.set_data(img[::fac, ::fac])
         fig.canvas.draw()
-        plt.pause(1e-3)
+        plt.pause(wait)
 
     return
 
@@ -50,3 +50,7 @@ bad  = data[bind]
 ex   = bad[-100:]
 imgs = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in ex.iterrows()]
 
+np.random.seed(314)
+rind = np.random.rand(len(bad)).argsort()[:100]
+rx   = bad.iloc[rind].sort_values(by="timestamp")
+imgr = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in rx.iterrows()]
