@@ -1,7 +1,40 @@
 import os
 import numpy as np
+from operator import itemgetter
+from itertools import repeat
 from cuip.cuip.utils import cuiplogger
 logger = cuiplogger.cuipLogger(loggername="IO", tofile=False)
+
+import numpy as np
+
+class CuipImageArray(np.ndarray):
+    """
+    Parameters
+    ----------
+    input_array: np.ndarray
+        stacked numpy array. example
+        an 'rgb' image array of 2160 x 4096 resolution
+        with 10 stacked images 
+        will have shape of shape = (10, 2160, 4096, 3)
+    comment: optional
+        any python datatype. preferably a string.
+    """
+
+    def __new__(cls, input_array, comment=None, filenames=None):
+        # Input array is an already formed ndarray instance
+        # We first cast to be our class type
+        obj = np.asarray(input_array).view(cls)
+        # add the new attribute to the created instance
+        obj.comment = comment
+        
+        
+        # Finally, we must return the newly created object:
+        return obj
+ 
+    def __array_finalize__(self, obj):
+        # see InfoArray.__array_finalize__ for comments
+        if obj is None: return
+        self.comment = getattr(obj, 'comment', None)
 
 def _reshape(arr, nrows, ncols, nwavs, nstack=1):
     """
@@ -79,6 +112,13 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
     sc: sparkContext
         if calling the function in spark cluster, this
         function will return a RDD of all files
+
+    Returns
+    -------
+    if sc:
+        return RDD which will be in format ()
+    else:
+        return list of 
     """
     def _map_filenames(split, iterator):
         """
@@ -96,7 +136,21 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
             img_list = [(fpath, np.fromfile(fpath, dtype).\
                              reshape(nstack, nrows, ncols, nwavs))\
                             for fpath in flist]
+            filenames = dict((f_rng, fnames) for f_rng,fnames in filenames)
+            final = []
+            for img in img_list:
+                final.append(zip(repeat(img[0]), 
+                                 img[1], 
+                                 filenames[os.path.basename(img[0]).strip(".raw")]))
+            return [img for sublist in final for img in sublist]
+            
+            """
+            img_list = [(fpath, np.fromfile(fpath, dtype).\
+                            reshape(nstack, nrows, ncols, nwavs))\
+                            for fpath in flist]
             # ToDo: Optimize this ..
-            return [[(x[0], zip(fnames, x[1])) for fnames in filenames] for x in img_list][0]
+            return [(x[0], zip(fnames[1], x[1])) for x in img_list for fnames in filenames if fnames[0] in os.path.basename(x[0])]
+            #return [[(x[0], zip(fnames[1], x[1])) for fnames in filenames if fnames[0] in os.path.basename(x[0])][0] for x in img_list]
+            """
     except Exception as ex:
-        logger.error("Error loading flist: "+str(ex))
+        logger.error("Error processing flist: "+str(ex))
