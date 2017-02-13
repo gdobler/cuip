@@ -39,7 +39,7 @@ if __name__=="__main__":
             lopen.flush()
         infile = os.path.join(row.fpath, row.fname)
         try:
-            params = register(ut.read_raw(infile))
+            params = register(ut.read_raw(infile), ref="dobler2015_alt")
             dr.append(params[0])
             dc.append(params[1])
             dt.append(params[2])
