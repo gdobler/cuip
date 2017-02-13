@@ -20,13 +20,13 @@ class CuipImageArray(np.ndarray):
         any python datatype. preferably a string.
     """
 
-    def __new__(cls, input_array, comment=None, filenames=None):
+    def __new__(cls, img_array, comment=None, metadata=None ):
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
-        obj = np.asarray(input_array).view(cls)
+        obj = np.asarray(img_array).view(cls)
         # add the new attribute to the created instance
         obj.comment = comment
-        
+        obj.metadata = metadata
         
         # Finally, we must return the newly created object:
         return obj
@@ -34,7 +34,8 @@ class CuipImageArray(np.ndarray):
     def __array_finalize__(self, obj):
         # see InfoArray.__array_finalize__ for comments
         if obj is None: return
-        self.comment = getattr(obj, 'comment', None)
+        self.info = getattr(obj, 'info', None)
+        self.metadata = getattr(obj, 'metadata', None)
 
 def _reshape(arr, nrows, ncols, nwavs, nstack=1):
     """
@@ -140,9 +141,12 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
             final = []
             for img in img_list:
                 final.append(zip(repeat(img[0]), 
-                                 img[1], 
-                                 filenames[os.path.basename(img[0]).strip(".raw")]))
-            return [img for sublist in final for img in sublist]
+                                 filenames[os.path.basename(img[0]).strip(".raw")],
+                                 img[1]))
+            return [CuipImageArray(img_array=img[2], 
+                                   info={"gname": img[0], 
+                                         "fname": img[1]}) \
+                        for sublist in final for img in sublist]
             
             """
             img_list = [(fpath, np.fromfile(fpath, dtype).\
