@@ -1,41 +1,11 @@
 import os
 import numpy as np
+import cia
 from operator import itemgetter
 from itertools import repeat
 from cuip.cuip.utils import cuiplogger
+
 logger = cuiplogger.cuipLogger(loggername="IO", tofile=False)
-
-import numpy as np
-
-class CuipImageArray(np.ndarray):
-    """
-    Parameters
-    ----------
-    input_array: np.ndarray
-        stacked numpy array. example
-        an 'rgb' image array of 2160 x 4096 resolution
-        with 10 stacked images 
-        will have shape of shape = (10, 2160, 4096, 3)
-    comment: optional
-        any python datatype. preferably a string.
-    """
-
-    def __new__(cls, img_array, comment=None, metadata=None ):
-        # Input array is an already formed ndarray instance
-        # We first cast to be our class type
-        obj = np.asarray(img_array).view(cls)
-        # add the new attribute to the created instance
-        obj.comment = comment
-        obj.metadata = metadata
-        
-        # Finally, we must return the newly created object:
-        return obj
- 
-    def __array_finalize__(self, obj):
-        # see InfoArray.__array_finalize__ for comments
-        if obj is None: return
-        self.comment = getattr(obj, 'comment', None)
-        self.metadata = getattr(obj, 'metadata', None)
 
 def _reshape(arr, nrows, ncols, nwavs, nstack=1):
     """
@@ -77,28 +47,39 @@ def fromfile(fpath, fname, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
     -------
     numpy.array OR spark RDD
     """
+    # create dictionary of filenames with f_number as the key
+    filenames = {filenames[0]: [filenames[1]]}
+
+    def _map_filenames(imgs):
+        """
+        Return CuipImageArray for a given parition
+        """
+        img_list = [imgtup for imgtup in imgs]
+        fn_mapped = []
+        for img in img_list:
+            fn_mapped.append(zip(repeat(img[0]),
+                                 filelist[os.path.basename(img[0]).strip('.raw')],
+                                 img[1]))
+        yield fn_mapped
     try:
         if sc:
             imgrdd = sc.binaryFiles(os.path.join(fpath, fname))
             img_byte = imgrdd.map(lambda (x,y): (x, (np.asarray(bytearray(y), dtype=np.uint8))))
-            img_res = img_byte.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
+            img_res  = imgrdd.mapValues(lambda x: _reshape(x, combined, nrows, ncols, ndims))
+            return img_res.mapPartitions(_map_filenames)
             return img_res.map(lambda x: zip(filenames, x[1]))
         else:
             # read raw images and add to a tuple with fpath
             img = (os.path.join(fpath,fname), 
                     np.fromfile(os.path.join(fpath, fname), dtype).\
                         reshape(nstack, nrows, ncols, nwavs))
-            # create dictionary of filenames with f_number as the key
-            filenames = {filenames[0]: [filenames[1]]}
             # create list of fname and gname mapped images 
             fn_mapped = zip(repeat(img[0]), 
                             filenames[os.path.basename(img[0]).strip('.raw')],
                             img[1])
-            print fn_mapped[0][0]
-            print fn_mapped[0][1]
             # return a CuipImageArray with metadata containing gname and fname
-            return [CuipImageArray(img_array=img[2], metadata={'gname': img[0],
-                                                               'fname': img[1]})\
+            return [cia.CuipImageArray(img_array=img[2], metadata={'gname': img[0],
+                                                                   'fname': img[1]})\
                         for img in fn_mapped]
 
     except Exception as ex:
@@ -135,26 +116,32 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
     else:
         return list of 
     """
-    def _map_filenames(split, iterator):
+    # create dictionary of filenames with f_range as key
+    filenames = dict((f_rng, fnames) for f_rng,fnames in filenames)
+
+    def _map_filenames(imgs):
         """
-        Given index and iterator, this function will return
-        a tuple of filename corresponding to the numpy array
+        Return CuipImageArray for a given parition
         """
-        yield zip(filenames[split], [x for i in iterator for x in i[1] ])
+        img_list = [imgtup for imgtup in imgs]
+        fn_mapped = []
+        for img in img_list:
+            fn_mapped.append(zip(repeat(img[0]),
+                                 filelist[os.path.basename(img[0]).strip('.raw')],
+                                 img[1]))
+        yield fn_mapped
 
     try:
         if sc:
             imgrdd   = sc.binaryFiles(",".join(flist))
-            img_byte = imgrdd.map(lambda (x,y): (x, (np.asarray(bytearray(y), dtype=np.uint8))))
-            img_res  = imgrdd.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
-            return img_res.mapPartitionsWithIndex(_map_filenames)
+            img_tup  = imgrdd.map(lambda (x,y): (x, (np.asarray(bytearray(y), dtype=np.uint8))))
+            img_res  = imgrdd.mapValues(lambda x: _reshape(x, combined, nrows, ncols, ndims))
+            return img_res.mapPartitions(_map_filenames)
         else:
             # create a list of all the files as a tuple of fname and ndarray
             img_list = [(fpath, np.fromfile(fpath, dtype).\
                              reshape(nstack, nrows, ncols, nwavs))\
                             for fpath in flist]
-            # create dictionary of filenames with f_range as key
-            filenames = dict((f_rng, fnames) for f_rng,fnames in filenames)
             fn_mapped = []
             # create list of fname and gname mapped images
             for img in img_list:
@@ -162,9 +149,9 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
                                      filenames[os.path.basename(img[0]).strip(".raw")],
                                      img[1]))
             # return CuipImageArray for all the ndarrays.. flattened
-            return [CuipImageArray(img_array=img[2], 
-                                   metadata={"gname": img[0], 
-                                         "fname": img[1]}) \
+            return [cia.CuipImageArray(img_array=img[2], 
+                                       metadata={"gname": img[0], 
+                                                 "fname": img[1]}) \
                         for sublist in fn_mapped for img in sublist]
             
     except Exception as ex:
