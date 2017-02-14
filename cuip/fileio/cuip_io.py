@@ -34,7 +34,7 @@ class CuipImageArray(np.ndarray):
     def __array_finalize__(self, obj):
         # see InfoArray.__array_finalize__ for comments
         if obj is None: return
-        self.info = getattr(obj, 'info', None)
+        self.comment = getattr(obj, 'comment', None)
         self.metadata = getattr(obj, 'metadata', None)
 
 def _reshape(arr, nrows, ncols, nwavs, nstack=1):
@@ -84,9 +84,23 @@ def fromfile(fpath, fname, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
             img_res = img_byte.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
             return img_res.map(lambda x: zip(filenames, x[1]))
         else:
-            img = np.fromfile(os.path.join(fpath, fname), dtype).\
-                reshape(nstack, nrows, ncols, nwavs)
-            return zip(filenames, img)
+            # read raw images and add to a tuple with fpath
+            img = (os.path.join(fpath,fname), 
+                    np.fromfile(os.path.join(fpath, fname), dtype).\
+                        reshape(nstack, nrows, ncols, nwavs))
+            # create dictionary of filenames with f_number as the key
+            filenames = {filenames[0]: [filenames[1]]}
+            # create list of fname and gname mapped images 
+            fn_mapped = zip(repeat(img[0]), 
+                            filenames[os.path.basename(img[0]).strip('.raw')],
+                            img[1])
+            print fn_mapped[0][0]
+            print fn_mapped[0][1]
+            # return a CuipImageArray with metadata containing gname and fname
+            return [CuipImageArray(img_array=img[2], metadata={'gname': img[0],
+                                                               'fname': img[1]})\
+                        for img in fn_mapped]
+
     except Exception as ex:
         logger.error("Error loading file: "+str(ex))
 
@@ -127,6 +141,7 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
         a tuple of filename corresponding to the numpy array
         """
         yield zip(filenames[split], [x for i in iterator for x in i[1] ])
+
     try:
         if sc:
             imgrdd   = sc.binaryFiles(",".join(flist))
@@ -134,27 +149,23 @@ def fromflist(flist, nrows, ncols, nwavs, filenames, nstack, dtype, sc):
             img_res  = imgrdd.flatMap(lambda x: _reshape(x[1], nstack, nrows, ncols, nwavs))
             return img_res.mapPartitionsWithIndex(_map_filenames)
         else:
+            # create a list of all the files as a tuple of fname and ndarray
             img_list = [(fpath, np.fromfile(fpath, dtype).\
                              reshape(nstack, nrows, ncols, nwavs))\
                             for fpath in flist]
+            # create dictionary of filenames with f_range as key
             filenames = dict((f_rng, fnames) for f_rng,fnames in filenames)
-            final = []
+            fn_mapped = []
+            # create list of fname and gname mapped images
             for img in img_list:
-                final.append(zip(repeat(img[0]), 
-                                 filenames[os.path.basename(img[0]).strip(".raw")],
-                                 img[1]))
+                fn_mapped.append(zip(repeat(img[0]), 
+                                     filenames[os.path.basename(img[0]).strip(".raw")],
+                                     img[1]))
+            # return CuipImageArray for all the ndarrays.. flattened
             return [CuipImageArray(img_array=img[2], 
-                                   info={"gname": img[0], 
+                                   metadata={"gname": img[0], 
                                          "fname": img[1]}) \
-                        for sublist in final for img in sublist]
+                        for sublist in fn_mapped for img in sublist]
             
-            """
-            img_list = [(fpath, np.fromfile(fpath, dtype).\
-                            reshape(nstack, nrows, ncols, nwavs))\
-                            for fpath in flist]
-            # ToDo: Optimize this ..
-            return [(x[0], zip(fnames[1], x[1])) for x in img_list for fnames in filenames if fnames[0] in os.path.basename(x[0])]
-            #return [[(x[0], zip(fnames[1], x[1])) for fnames in filenames if fnames[0] in os.path.basename(x[0])][0] for x in img_list]
-            """
     except Exception as ex:
         logger.error("Error processing flist: "+str(ex))
