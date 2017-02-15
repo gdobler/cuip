@@ -28,6 +28,29 @@ def view_images(imgs, fac=4, wait=1e-3):
     return
 
 
+def view_flist(flist, fac=4, wait=1e-3):
+    plt.close("all")
+
+    img = ut.read_raw(flist[0])
+
+    xs = 8.0
+    ys = xs * float(img.shape[0]) / float(img.shape[1])
+    fig, ax = plt.subplots(figsize=(xs, ys))
+    fig.subplots_adjust(0, 0, 1, 1)
+    ax.axis("off")
+    im = ax.imshow(img[::fac, ::fac])
+    fig.canvas.draw()
+    plt.ion()
+    plt.show()
+
+    for tfile in flist:
+        im.set_data(ut.read_raw(tfile)[::fac, ::fac])
+        fig.canvas.draw()
+        plt.pause(wait)
+
+    return
+
+
 # -- read in the data
 for ii in range(10):
     if ii == 0:
@@ -37,6 +60,7 @@ for ii in range(10):
         data = data.append(pd.read_csv(os.path.join("output", 
                                                     "register_{0:04}.csv" \
                                                         .format(ii))))
+data.reset_index(inplace=True)
 nbad = (np.abs(data.drow) > 20).sum()
 nnon = (np.abs(data.drow) == 9999).sum()
 print("{0}".format(ii))
