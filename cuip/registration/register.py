@@ -32,14 +32,14 @@ def locate_sources(img, hpf=False):
     lsz = spm.sum(thr, labs[0], range(1, labs[1]+1))
 
     # -- get the positions of the sources
-    ind = (lsz > 25.) & (lsz < 400.) 
+    ind = (lsz > 25.) & (lsz < 420.) 
 
     return np.array(spm.center_of_mass(thr, labs[0], 
                                        np.arange(1, labs[1]+1)[ind])).T
 
 
 
-def get_catalog(ref="dobler2015"):
+def get_catalog(ref="dobler2015_alt"):
     """
     Return the row/col positions of the catalog sources.
 
@@ -251,23 +251,3 @@ def plot_registration(img, ref, params):
     plt.show()
 
     return
-
-
-if __name__=="__main__":
-
-    # -- get the file list
-    st = "2013.11.01"
-    en = "2013.12.31"
-    db = os.getenv("CUIP_DBNAME")
-    t0 = time.time()
-    fl = get_files(db, st, en)
-    print("time to query the filelist database: {0}s".format(time.time() - t0))
-
-    # -- open the images
-    img  = ut.read_raw(fl[0][0])
-
-    # -- register
-    params = register(img)
-
-    # -- plot the result
-    plot_registration(img, get_reference_image(), params)
