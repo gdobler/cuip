@@ -77,7 +77,7 @@ def get_catalog(ref="dobler2015_alt"):
     return rr_cat, cc_cat
 
 
-def register(img, ref="dobler2015"):
+def register(img, ref="dobler2015_alt"):
     """
     Register an image to the catalog.
     """
