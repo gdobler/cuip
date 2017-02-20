@@ -166,6 +166,11 @@ def register(img, ref="dobler2015_alt"):
             if flag06 and flag16 and flag26:
                 good0126.append([ii, jj, kk, mm])
 
+    # -- ensure that the rotation is not too large
+    good0126 = np.array(good0126)
+    good0126 = good0126[(cc_cat[good0126[:, 0]] - cc_cat[good0126[:, 1]]) > 
+                        800]
+
     p0s, p1s, p2s, p6s = np.array(good0126).T
 
     # -- find the delta angles of the first 2 pairs
