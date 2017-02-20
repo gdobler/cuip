@@ -6,7 +6,7 @@ import os
 if __name__ == "__main__":
 
     for ii in range(10):
-        cmdl = "mv output/register_{0:04}.log output/register_{0:04}_1.log"
-        cmdc = "mv output/register_{0:04}.csv output/register_{0:04}_1.csv"
+        cmdl = "mv output/register_{0:04}.log output/register_{0:04}_2.log"
+        cmdc = "mv output/register_{0:04}.csv output/register_{0:04}_2.csv"
         os.system(cmdl.format(ii))
         os.system(cmdc.format(ii))
