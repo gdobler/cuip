@@ -72,9 +72,9 @@ print("fraction not registered {0}\n".format(nnon / float(len(data))))
 bind = data.drow == -9999
 bad  = data[bind]
 ex   = bad[-100:]
-imgs = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in ex.iterrows()]
+# imgs = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in ex.iterrows()]
 
 np.random.seed(314)
 rind = np.random.rand(len(bad)).argsort()[:100]
 rx   = bad.iloc[rind].sort_values(by="timestamp")
-imgr = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in rx.iterrows()]
+# imgr = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in rx.iterrows()]
