@@ -75,9 +75,9 @@ def skyline(image):
 		grad_max.append(np.argpartition(grad, -20)[-20:].min())
 
 
-	showme(edge, cmap = 'gray')
-	plt.plot(np.arange(cols), grad_max, 'g-', ms = 1.5)
-	plt.show()
+	#showme(edge, cmap = 'gray')
+	#plt.plot(np.arange(cols), grad_max, 'g-', ms = 1.5)
+	#plt.show()
 	
 	return grad_max
 
