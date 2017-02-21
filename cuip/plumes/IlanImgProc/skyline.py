@@ -78,7 +78,9 @@ def skyline(image):
 	showme(edge, cmap = 'gray')
 	plt.plot(np.arange(cols), grad_max, 'g-', ms = 1.5)
 	plt.show()
+	
+	return grad_max
 
 
-skyline(rawimg)
+
 
