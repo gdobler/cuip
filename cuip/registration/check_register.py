@@ -78,3 +78,9 @@ np.random.seed(314)
 rind = np.random.rand(len(bad)).argsort()[:100]
 rx   = bad.iloc[rind].sort_values(by="timestamp")
 # imgr = [ut.read_raw(os.path.join(i.fpath, i.fname)) for r, i in rx.iterrows()]
+
+
+# -- select some poorly registered frames
+sub = data[24000:26000]
+sub = sub[(sub.drow > -9999) & (sub.drow < -50)]
+
