@@ -39,7 +39,7 @@ def locate_sources(img, hpf=False):
 
 
 
-def get_catalog(ref="dobler2015_alt"):
+def get_catalog(ref="dobler2015_alt2"):
     """
     Return the row/col positions of the catalog sources.
 
@@ -48,6 +48,15 @@ def get_catalog(ref="dobler2015_alt"):
     with an UNSATURATED image!!!
     """
 
+    if ref == "dobler2015_alt2":
+        rr_cat = np.array([1597.8277796914979, 1495.0421522225859, 
+                           1492.9830430088966, 1555.1681412623122, 
+                           1662.8657041240722, 
+                           1654.0053835193969, 1321.1722418514564])
+        cc_cat = np.array([2505.9090266067747, 1376.4669156388732, 
+                           1433.2983299366967, 1478.5987326378604, 
+                           2506.0843596320387, 
+                           1752.4602580585324, 3008.0525788311065])
     if ref == "dobler2015_alt":
         rr_cat = np.array([1597.8277796914979, 1495.0421522225859, 
                            1492.9830430088966, 1555.1681412623122, 
@@ -77,7 +86,7 @@ def get_catalog(ref="dobler2015_alt"):
     return rr_cat, cc_cat
 
 
-def register(img, ref="dobler2015_alt"):
+def register(img, ref="dobler2015_alt2"):
     """
     Register an image to the catalog.
     """
