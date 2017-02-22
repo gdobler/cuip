@@ -86,26 +86,12 @@ def get_catalog(ref="dobler2015_alt2"):
     return rr_cat, cc_cat
 
 
-def register(img, ref="dobler2015_alt2"):
+def find_quads(dist, rr1, cc1, rr_cat, cc_cat, buff=10):
     """
-    Register an image to the catalog.
+    Find quads of sources with the appropriate distance ratios.
     """
-
-    # -- extract sources
-    rr1, cc1 = locate_sources(img)
-
-    # -- get the catalog positions and distances (squared)
-    rr_cat, cc_cat = get_catalog(ref=ref)
-    dcat  = np.sqrt(((rr_cat[0] - rr_cat)**2 + (cc_cat[0] - cc_cat)**2)[1:])
-    dcatm = np.sqrt((rr_cat[:, np.newaxis] - rr_cat)**2 + 
-                    (cc_cat[:,np.newaxis] - cc_cat)**2)
-
-    # -- find the pairwise distance (squared) of all points
-    dist = np.sqrt((rr1[:, np.newaxis] - rr1)**2 + 
-                   (cc1[:,np.newaxis] - cc1)**2)
 
     # -- trim rows that do not have that distance distribution
-    buff = 10
     pts  = []
 
     # -- get all possible points
@@ -179,6 +165,29 @@ def register(img, ref="dobler2015_alt2"):
     good0126 = np.array(good0126)
     good0126 = good0126[(cc1[good0126[:, 0]] - cc1[good0126[:, 1]]) > 800]
 
+    return good0126
+
+
+def register(img, ref="dobler2015_alt2"):
+    """
+    Register an image to the catalog.
+    """
+
+    # -- extract sources
+    rr1, cc1 = locate_sources(img)
+
+    # -- get the catalog positions and distances (squared)
+    rr_cat, cc_cat = get_catalog(ref=ref)
+    dcat  = np.sqrt(((rr_cat[0] - rr_cat)**2 + (cc_cat[0] - cc_cat)**2)[1:])
+    dcatm = np.sqrt((rr_cat[:, np.newaxis] - rr_cat)**2 + 
+                    (cc_cat[:,np.newaxis] - cc_cat)**2)
+
+    # -- find the pairwise distance (squared) of all points
+    dist = np.sqrt((rr1[:, np.newaxis] - rr1)**2 + 
+                   (cc1[:,np.newaxis] - cc1)**2)
+
+    # -- find reasonable quads
+    good0126 = find_quads(dist, rr1, cc1, rr_cat, cc_cat)
     p0s, p1s, p2s, p6s = np.array(good0126).T
 
     # -- find the delta angles of the first 2 pairs
