@@ -23,7 +23,7 @@ def showme(image, ax=None, cmap=None):
         ax.imshow(image, cmap=cmap)
     ax.axis('off')
 
-def skyline(image):
+def skyline(image, imgname, plotme=False):
 
 	#Convert the image to float
 	img = rawimg.astype(float)
@@ -68,11 +68,11 @@ def skyline(image):
 		grad = np.gradient(edge[:,i])
 		grad_max.append(np.argpartition(grad, -20)[-20:].min())
 
-
-	showme(edge, cmap = 'gray')
-	plt.plot(np.arange(cols), grad_max, 'g-', ms = 1.5)
-	plt.show()
-	
+        if plotme:
+            showme(edge, cmap = 'gray')
+            plt.plot(np.arange(cols), grad_max, 'g-', ms = 1.5)
+            plt.show()
+	np.save(imgname.split('.')[0] + '_skyline', grad_max)
 	return grad_max
 
 
@@ -81,8 +81,9 @@ def skyline(image):
 #path = 'cuip/cuip/plumes/IlanImgProc/'
 
 if __name__ == '__main__':
-    rawimg = np.fromfile('img1.raw', np.uint8)
-    skl = skyline(rawimg)
+    imgname = 'img1.raw'
+    rawimg = np.fromfile(imgname, np.uint8)
+    skl = skyline(rawimg, imgname)
     print (skl)
 
 
