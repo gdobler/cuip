@@ -48,28 +48,40 @@ result  = np.zeros_like(labs[0])
 
 
 # -- read in image
-for ii in range(100):
-    result[...] = 0.
-    rec = reg.iloc[ii]
-    ct  = np.cos(-rec.dtheta * deg2rad)
-    st  = np.sin(-rec.dtheta * deg2rad)
-    img = read_raw(rec.fpath, rec.fname)
+# for ii in range(100):
+ii = 0
+result[...] = 0.
+rec = reg.iloc[ii]
+ct  = np.cos(-rec.dtheta * deg2rad)
+st  = np.sin(-rec.dtheta * deg2rad)
+img = read_raw(rec.fpath, rec.fname)
 
-    # -- rotate the source labels (the nrow//2 and ncol//2 performs
-    #    rotation about the center of the image)
-    rsrc = (rlabs * ct - clabs * st - rec.drow + nro2).round().astype(int)
-    csrc = (rlabs * st + clabs * ct - rec.dcol + nco2).round().astype(int)
-    gind = (rsrc >= 0) & (rsrc < nrow) & (csrc >= 0) & (csrc < ncol)
-    rsrc = rsrc[gind]
-    csrc = csrc[gind]
-    lsrc = llabs[gind]
+# -- rotate the source labels (the nrow//2 and ncol//2 performs
+#    rotation about the center of the image)
+rsrc = (rlabs * ct - clabs * st - rec.drow + nro2).round().astype(int)
+csrc = (rlabs * st + clabs * ct - rec.dcol + nco2).round().astype(int)
+gind = (rsrc >= 0) & (rsrc < nrow) & (csrc >= 0) & (csrc < ncol)
+rsrc = rsrc[gind]
+csrc = csrc[gind]
+lsrc = llabs[gind]
 
-    result[rsrc, csrc] = lsrc
+result[rsrc, csrc] = lsrc
 
-    # -- get brightnesses
-    lun = np.unique(lsrc)
-    lum = np.array([ndm.mean(img[..., i], result, lun) for i in [0, 1, 2]]).T
+# -- get brightnesses
+lun = np.unique(lsrc)
+lum = np.array([ndm.mean(img[..., i], result, lun) for i in [0, 1, 2]]).T
 
-    # -- set indices of extracted sources to their values
-    lcs[ii, lun - 1] = lum
+# -- set indices of extracted sources to their values
+lcs[ii, lun - 1] = lum
+
+
+
+# -- # -- # -- # -- # -- 
+tlab = result[1430, 1875]
+foo  = result == tlab
+trrng = (rgr[foo].min(), rgr[foo].max())
+tcrng = (cgr[foo].min(), cgr[foo].max())
+
+pred = img[trrng[0]:trrng[1]+1, tcrng[0]:tcrng[1]+1].mean(0).mean(0)
+
 
