@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import time
 import numpy as np
 import pandas as pd
 import scipy.ndimage.measurements as ndm
@@ -27,47 +28,48 @@ labs = ndm.label(srcs)
 nlab = labs[1]
 
 
-# -- initialize an array of -9999s
-lcs  = np.zeros((nobs, nlab), dtype=float) - 9999
+# -- initialize lightcurve array
+lcs  = np.zeros((nobs, nlab, 3), dtype=float) - 9999
 
 
-# -- read in image
-ii  = 0
-rec = reg.iloc[ii]
-img = read_raw(rec.fpath, rec.fname)
-
-
-# -- rotate the source labels (the nrow//2 and ncol//2 performs
-#    rotation about the center of the image)
-cgr, rgr = np.meshgrid(range(4096), range(2160))
+# -- initialize the rows and columns grids (the nrow//2 and ncol//2
+#    performs rotation about the center of the image)
+cgr, rgr = np.meshgrid(range(ncol), range(nrow))
 rlabs    = rgr[srcs] - nrow // 2
 clabs    = cgr[srcs] - ncol // 2
 llabs    = labs[0][srcs]
 
-rsrc = (rlabs * np.cos(-rec.dtheta * np.pi / 180.) -
-        clabs * np.sin(-rec.dtheta * np.pi / 180.) - rec.drow
-        + nrow // 2) \
-        .round().astype(int)
-csrc = (rlabs * np.sin(-rec.dtheta * np.pi / 180.) +
-        clabs * np.cos(-rec.dtheta * np.pi / 180.) - rec.dcol
-        + ncol // 2) \
-        .round().astype(int)
 
-brind = (rsrc >= 0) & (rsrc < nrow)
-bcind = (csrc >= 0) & (csrc < ncol)
-
-rsrc = rsrc[brind & bcind]
-csrc = csrc[brind & bcind]
-lsrc = llabs[brind & bcind]
-
-result = np.zeros_like(labs[0]) # set this once and re-zero each time
-result[rsrc, csrc] = lsrc
+# -- utilities
+deg2rad = np.pi / 180.
+nro2    = nrow // 2
+nco2    = ncol // 2
+result  = np.zeros_like(labs[0])
 
 
-# -- get brightnesses
-lun = np.unique(lsrc)
-lum = np.array([ndm.mean(img[..., i], result, lun) for i in [0, 1, 2]]).T
+# -- read in image
+for ii in range(100):
+    result[...] = 0.
+    rec = reg.iloc[ii]
+    ct  = np.cos(-rec.dtheta * deg2rad)
+    st  = np.sin(-rec.dtheta * deg2rad)
+    img = read_raw(rec.fpath, rec.fname)
 
+    # -- rotate the source labels (the nrow//2 and ncol//2 performs
+    #    rotation about the center of the image)
+    rsrc = (rlabs * ct - clabs * st - rec.drow + nro2).round().astype(int)
+    csrc = (rlabs * st + clabs * ct - rec.dcol + nco2).round().astype(int)
+    gind = (rsrc >= 0) & (rsrc < nrow) & (csrc >= 0) & (csrc < ncol)
+    rsrc = rsrc[gind]
+    csrc = csrc[gind]
+    lsrc = llabs[gind]
 
-# -- set indices of extracted sources to their values
-lcs[ii, lun] = lum
+    result[rsrc, csrc] = lsrc
+
+    # -- get brightnesses
+    lun = np.unique(lsrc)
+    lum = np.array([ndm.mean(img[..., i], result, lun) for i in [0, 1, 2]]).T
+
+    # -- set indices of extracted sources to their values
+    lcs[ii, lun - 1] = lum
+
