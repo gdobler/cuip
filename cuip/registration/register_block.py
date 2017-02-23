@@ -31,7 +31,7 @@ if __name__=="__main__":
                               "w")
     lopen.write("Registering {0} files...\n========\n".format(len(fl)))
 
-    # -- register
+    # -- register (use default catalog)
     dr, dc, dt = [], [], []
     for ii, row in fl.iterrows():
         if ii % 10 == 0:
@@ -39,7 +39,7 @@ if __name__=="__main__":
             lopen.flush()
         infile = os.path.join(row.fpath, row.fname)
         try:
-            params = register(ut.read_raw(infile), ref="dobler2015_alt")
+            params = register(ut.read_raw(infile))
             dr.append(params[0])
             dc.append(params[1])
             dt.append(params[2])
