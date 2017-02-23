@@ -24,16 +24,17 @@ if __name__=="__main__":
     fl = get_files(db, st, en, df=True)
 
     # -- pull off nighttimes
-    fl = fl[(fl.timestamp.dt.hour >= 19) | (fl.timestamp.dt.hour < 5)]
+    fl  = fl[(fl.timestamp.dt.hour >= 19) | (fl.timestamp.dt.hour < 5)]
+    nfl = len(fl)
 
     # -- open the log file
     lopen = open(os.path.join("output", "register_{0:04}.log".format(ind)), 
                               "w")
-    lopen.write("Registering {0} files...\n========\n".format(len(fl)))
+    lopen.write("Registering {0} files...\n========\n".format(nfl))
 
     # -- register (use default catalog)
     dr, dc, dt = [], [], []
-    for ii, row in fl.iterrows():
+    for ii, (ind, row) in enumerate(fl.iterrows()):
         if ii % 10 == 0:
             lopen.write("  registering file {0}\n".format(ii))
             lopen.flush()
@@ -47,6 +48,13 @@ if __name__=="__main__":
             dr.append(-9999)
             dc.append(-9999)
             dt.append(-9999)
+        if (ii + 1) % 100 == 0:
+            flt           = fl[:ii]
+            flt["drow"]   = dr
+            flt["dcol"]   = dc
+            flt["dtheta"] = dt
+            flt.to_csv(os.path.join("output", "register_{0:04}.csv" \
+                                        .format(ind)), index=False)
 
     # -- add to dataframe
     fl["drow"]   = dr
