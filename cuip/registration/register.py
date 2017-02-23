@@ -195,8 +195,8 @@ def register(img, ref="dobler2015_alt2"):
     theta02 = np.arccos((rr1[p0s] - rr1[p2s]) / dist[p0s, p2s])
     dtheta  = (theta01 - theta02) * 180. / np.pi
 
-    theta01_cat = np.arccos((rr_cat[0] - rr_cat[1]) / dcat0[1])
-    theta02_cat = np.arccos((rr_cat[0] - rr_cat[2]) / dcat0[2])
+    theta01_cat = np.arccos((rr_cat[0] - rr_cat[1]) / dcatm[0, 1])
+    theta02_cat = np.arccos((rr_cat[0] - rr_cat[2]) / dcatm[0, 2])
     dtheta_cat  = (theta01_cat - theta02_cat) * 180. / np.pi
 
     # -- choose the closest delta theta
