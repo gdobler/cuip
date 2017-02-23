@@ -1,5 +1,5 @@
 import numpy as np
-
+import scipy.ndimage as nd
 
 np.random.seed(123)
 
@@ -20,10 +20,10 @@ def img_points(image, skyline):
 
 if __name__ == '__main__':
 	skyline = np.load('img1_skyline.npy')
-    imgname = 'img1.raw'
-    rawimg = np.fromfile(imgname, np.uint8)
-    skl = skyline(rawimg, imgname)
-    img_point(rawimg, skl)
+	imgname = 'img1.raw'
+	rawimg = np.fromfile(imgname, np.uint8)
+	skl = skyline(rawimg, imgname)
+	img_point(rawimg, skl)
     
 
 
