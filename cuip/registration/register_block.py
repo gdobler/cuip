@@ -34,7 +34,7 @@ if __name__=="__main__":
 
     # -- register (use default catalog)
     dr, dc, dt = [], [], []
-    for ii, (ind, row) in enumerate(fl.iterrows()):
+    for ii, (rind, row) in enumerate(fl.iterrows()):
         if ii % 10 == 0:
             lopen.write("  registering file {0}\n".format(ii))
             lopen.flush()
@@ -49,7 +49,7 @@ if __name__=="__main__":
             dc.append(-9999)
             dt.append(-9999)
         if (ii + 1) % 100 == 0:
-            flt           = fl[:ii]
+            flt           = fl[:ii+1].copy()
             flt["drow"]   = dr
             flt["dcol"]   = dc
             flt["dtheta"] = dt
@@ -66,6 +66,6 @@ if __name__=="__main__":
     lopen.flush()
     fl.to_csv(os.path.join("output", "register_{0:04}.csv".format(ind)), 
               index=False)
-    lopen.write("FINISHED in {0}s".format(time.time() - t0))
+    lopen.write("FINISHED in {0}s\n".format(time.time() - t0))
     lopen.flush()
     lopen.close()
