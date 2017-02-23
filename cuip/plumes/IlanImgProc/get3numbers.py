@@ -6,7 +6,7 @@ np.random.seed(123)
 
 
 def img_points(image, skyline):
-
+	n = 5
 	x_rand = np.random.choice(skyline.shape[0], n)
 
 	sl = skyline[x_rand]
