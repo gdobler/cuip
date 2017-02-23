@@ -55,11 +55,13 @@ def view_flist(flist, fac=4, wait=1e-3):
 for ii in range(10):
     if ii == 0:
         data = pd.read_csv(os.path.join("output", 
-                                        "register_{0:04}.csv".format(ii)))
+                                        "register_{0:04}.csv".format(ii)), 
+                           parse_dates=["timestamp"])
     else:
         data = data.append(pd.read_csv(os.path.join("output", 
                                                     "register_{0:04}.csv" \
-                                                        .format(ii))))
+                                                        .format(ii)), 
+                                       parse_dates=["timestamp"]))
 data.reset_index(inplace=True)
 nbad = (np.abs(data.drow) > 20).sum()
 nnon = (np.abs(data.drow) == 9999).sum()
