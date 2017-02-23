@@ -32,7 +32,7 @@ def locate_sources(img, hpf=False):
     lsz = spm.sum(thr, labs[0], range(1, labs[1]+1))
 
     # -- get the positions of the sources
-    ind = (lsz > 25.) & (lsz < 420.) 
+    ind = (lsz > 25.) & (lsz < 500.) 
 
     return np.array(spm.center_of_mass(thr, labs[0], 
                                        np.arange(1, labs[1]+1)[ind])).T
