@@ -83,7 +83,7 @@ def skyline(image, imgname, plotme=False):
 if __name__ == '__main__':
     imgname = 'img1.raw'
     rawimg = np.fromfile(imgname, np.uint8)
-    skl = skyline(rawimg, imgname)
+    skl = np.load('img1_skyline.npy')
     print (skl)
 
 
