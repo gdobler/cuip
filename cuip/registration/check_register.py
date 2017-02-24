@@ -28,6 +28,34 @@ def view_images(imgs, fac=4, wait=1e-3):
     return
 
 
+def view_random(df, nframe=100, fac=4, wait=1e-3):
+    np.random.seed(314)
+    rind = np.random.rand(len(df)).argsort()[:nframe]
+    rx   = df.iloc[rind].sort_values(by="timestamp")
+
+    img0 = ut.read_raw(rx.iloc[0].fpath, rx.iloc[0].fname)
+
+    plt.close("all")
+
+    xs = 8.0
+    ys = xs * float(img0.shape[0]) / float(img0.shape[1])
+    fig, ax = plt.subplots(figsize=(xs, ys))
+    fig.subplots_adjust(0, 0, 1, 1)
+    ax.axis("off")
+    im = ax.imshow(img0[::fac, ::fac])
+    fig.canvas.draw()
+    plt.ion()
+    plt.show()
+
+    for ii in range(nframe):
+        im.set_data(ut.read_raw(rx.iloc[ii].fpath, 
+                                rx.iloc[ii].fname)[::fac, ::fac])
+        fig.canvas.draw()
+        plt.pause(wait)
+
+    return
+
+
 def view_flist(flist, fac=4, wait=1e-3):
     plt.close("all")
 
