@@ -48,8 +48,11 @@ def view_random(df, nframe=100, fac=4, wait=1e-3):
     plt.show()
 
     for ii in range(nframe):
-        im.set_data(ut.read_raw(rx.iloc[ii].fpath, 
-                                rx.iloc[ii].fname)[::fac, ::fac])
+        try:
+            im.set_data(ut.read_raw(rx.iloc[ii].fpath, 
+                                    rx.iloc[ii].fname)[::fac, ::fac])
+        except:
+            continue
         fig.canvas.draw()
         plt.pause(wait)
 
@@ -80,8 +83,10 @@ def view_flist(flist, fac=4, wait=1e-3):
 
 
 # -- read in the data
-for ii in range(10):
-    if ii == 0:
+#for ii in range(10):
+#    if ii == 0:
+for ii in range(10,20):
+    if ii == 10:
         data = pd.read_csv(os.path.join("output", 
                                         "register_{0:04}.csv".format(ii)), 
                            parse_dates=["timestamp"])
