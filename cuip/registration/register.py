@@ -256,10 +256,11 @@ def plot_registration(img, ref, params):
     dr, dc, dt = params
 
     # -- test registration
-    rot   = nd.interpolation.rotate(img.mean(-1), dt, reshape=False)
-    rot   = nd.interpolation.shift(rot, (dr, dc))
+    rot   = img.mean(-1)
     scl1  = ref.mean(-1)
-    scl1 *= rot.mean() / ref.mean()
+    rot  *= scl1.mean() / rot.mean()
+    rot   = nd.interpolation.shift(rot, (dr, dc))
+    rot   = nd.interpolation.rotate(rot, dt, reshape=False)
     comp  = np.dstack([scl1.clip(0,255).astype(np.uint8),
                        np.zeros(img.shape[:2],dtype=np.uint8),
                        rot.clip(0,255).astype(np.uint8)])
