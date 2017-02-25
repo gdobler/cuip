@@ -2,6 +2,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import time
 import numpy as np
 import pandas as pd
@@ -9,6 +10,7 @@ import scipy.ndimage.measurements as ndm
 from cuip.cuip.registration.uo_tools import read_raw
 
 ind = 0
+t0  = time.time()
 
 # -- read in the registration results
 reg  = pd.read_csv(os.path.join("..", "registration", "output",
@@ -30,8 +32,12 @@ labs = ndm.label(srcs)
 nlab = labs[1]
 
 
-# -- set the ouput file
+# -- set the ouput file name and initialize the log
 oname = os.path.join("output", "light_curves_{0:04}.npy".format(ind))
+lname = os.path.join("output", "light_curves_{0:04}.log".format(ind))
+lopen = open(lname, "w")
+lopen.write("Extracting lightcurves for {0} observations...\n========\n" \
+                .format(nobs))
 
 
 # -- initialize lightcurve array
@@ -56,7 +62,10 @@ rot      = np.zeros_like(labs[0])
 # -- read in image
 for ii in range(nobs):
 
-    print("  extracting brightensses for obs {0} of {1}".format(ii, nobs))
+    if ii % 10 == 0:
+        lopen.write("  extracting brightensses for obs {0} of {1}\n" \
+                        .format(ii, nobs))
+        lopen.flush()
 
     if reg.iloc[ii].drow == -9999:
         continue
@@ -89,14 +98,11 @@ for ii in range(nobs):
     if (ii + 1) % 100 == 0:
         np.save(oname, lcs[:ii])
 
-
-# -- # -- # -- # -- # -- 
-#tlab = rot[1430, 1875]
-tlab = rot[1560, 1770]
-foo  = rot == tlab
-trrng = (rgr[foo].min(), rgr[foo].max())
-tcrng = (cgr[foo].min(), cgr[foo].max())
-
-pred = img[trrng[0]:trrng[1]+1, tcrng[0]:tcrng[1]+1].mean(0).mean(0)
-
+# -- write to file
+lopen.write("\nWriting to npy...\n========\n")
+lopen.flush()
+np.save(oname, lcs[:ii])
+lopen.write("FINISHED in {0}s\n".format(time.time() - t0))
+lopen.flush()
+lopen.close()
 
