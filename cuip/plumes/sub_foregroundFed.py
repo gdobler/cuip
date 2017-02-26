@@ -7,41 +7,12 @@ import pickle as pkl
 import pylab as pl
 from findImageSize import findsize
 from scipy.ndimage.filters import gaussian_filter as gf
-
+from utils import RawImages
+from configs import *
 #from plm_images import *
 
-MAXPROCESSES = 5e6
-OUTPUTDIR = "./outputs/"
-LIM = 12 #25
 
-try:
-    DST_WRITE = os.environ['DST_WRITE']
-except KeyError:
-    DST_WRITE =os.environ['HOME']
-
-
-class RawImages:
-    def __init__(self, fl=None,  lim=-1):
-        fl = [f.strip() for f in fl if f.strip().endswith('.raw')][:lim]
-        fl0 = os.path.join(DST_WRITE,fl[0])
-        self.imsize = findsize(fl0, 
-                      filepattern = '-'.join(fl0.split('/')[-1].\
-                                             split('.')[0].split('-')[:-2]),
-                               outputdir = OUTPUTDIR)
-        
-        self.imgs = np.zeros([len(fl), self.imsize['nrows'], 
-                              self.imsize['ncols'],
-                              self.imsize['nbands']])    
-        for i,f in enumerate(fl):    
-            self.imgs[i] = self.readraw(os.path.join(DST_WRITE,f))
-
-    def readraw(self, imfile):
-        rgb = np.fromfile(imfile, dtype=np.uint8).clip(0, 255).\
-            reshape(self.imsize['nrows'],
-                    self.imsize['ncols'],
-                    self.imsize['nbands']).astype(float)
-        return rgb
-
+    
 def subforg(difs, allframes, i, j, fname):
 #image loop
     #lf must be odd
@@ -68,7 +39,7 @@ if __name__=='__main__':
     # -- get the raw images
     raw = RawImages(fl=fl, lim=LIM)
     # set the image numbers
-    lim = LIM-5 if LIM > 0 else len(fl)-5
+    lim = LIM-WINDOW if LIM > 0 else len(fl)-WINDOW
 
     # -- initialize the the difference image list
     difs = np.zeros([lim] + list(raw.imgs[0].shape))
@@ -84,7 +55,7 @@ if __name__=='__main__':
 #              itertools.repeat(5)))
 #pool.close
     print("before ",difs[6])
-    processes = [mpc.Process(target=subforg, args=(difs, raw.imgs, i, 5, 'tmp')) for i in range(5, lim)]
+    processes = [mpc.Process(target=subforg, args=(difs, raw.imgs, i, WINDOW, 'tmp')) for i in range(WINDOW, lim)]
 
     for p in processes:
         p.start()
@@ -126,11 +97,11 @@ imb = pl.imshow(difs[0][:,:,0],clim=[0,5])
 pl.axis('off')
 pl.subplots_adjust(0.05,0.05,0.95,0.95,0.05,0.05)
 #for ii,jj in enumerate(range(28,42)):
-for ii,jj in enumerate(range(5, lim)):
+for ii,jj in enumerate(range(WINDOW, lim)):
 imt.set_data(raw.imgs[jj])
 pl.draw()
 imb.set_data(difs[ii][:,:,0])
-#    imb.set_data(difs[jj-5][:,:,0])
+#    imb.set_data(difs[jj-WINDOW][:,:,0])
 pl.clim([0,5])
 pl.draw()
 pl.savefig(OUTPUTDIR + '/difs_imgs_' + str(ii).zfill(3) + 

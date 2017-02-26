@@ -11,11 +11,13 @@ from scipy.ndimage.filters import gaussian_filter as gf
 #from plm_images import *
 from sub_foregroundFed import *
 
-if __name__=='__main__':
-    # -- get the file list
+def getsubimseq(lim=LIM, nmax=-1):
     fl = (open(os.path.join(DST_WRITE, 'filelist.txt'), 'rb')).readlines()
-    raw = RawImages(fl=fl, lim=LIM)    
-    lim = LIM-5 if LIM > 0 else len(fl)-5
+    raw = RawImages(fl=fl, lim=lim)    
+    lim = LIM-WINDOW if LIM > 0 else len(fl)-WINDOW
+    if nmax>0 and lim>nmax:
+        lim = nmax + WINDOW
+
     # -- initialize the the difference image list
     difs = np.zeros([lim] + list(raw.imgs[0].shape))
     #difs = mpc.Array('f', difs.flatten())
@@ -23,26 +25,33 @@ if __name__=='__main__':
     # -- loop through the images
     nps = min(mpc.cpu_count() - 1 or 1, MAXPROCESSES)
 
-
     print("before ",difs[6])
     goods = []
 
-    for ii in range(5, lim):
+    for ii in range(WINDOW, lim):
         try:
             print(ii)
             difs[ii] = np.load(OUTPUTDIR + "/" + 'tmp' + '_%04d.npy'%ii)
             goods.append(ii)
         except IOError:
             pass
-    #subforg(ii, raw, difs[ii])
-    difs = difs[5:]
+        
+    difs = difs[WINDOW:]        
+    return difs, goods
+
+ 
+
+if __name__=='__main__':
+    # -- get the file list
+
+    difs, goods = getsubimseq(lim)
     
     '''
     # -- save figures to file
     im = pl.imshow(difs[0][:,:,0],clim=[0,5])
     for ii in goods: #range(len(difs)):
         print(ii)
-        im.set_data(difs[ii-5][:,:,0])
+        im.set_data(difs[ii-WINDOW][:,:,0])
         im.set_clim([0,5])
         pl.draw()
         pl.show()
@@ -52,7 +61,7 @@ if __name__=='__main__':
     pl.figure(2,figsize=[15,15])
     pl.subplot(211) 
     raw.readraws()
-    imt = pl.imshow(raw.imgs[5])
+    imt = pl.imshow(raw.imgs[WINDOW])
     pl.axis('off')
     pl.subplot(212)
     imb = pl.imshow(difs[0][:,:,0],clim=[0,5])
