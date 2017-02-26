@@ -22,22 +22,28 @@ def merge_subset(conn, sublist, dpath, binfac, nimg_per_file, nrow=2160,
     Take a list of lists, merge each sublist into a stacked image, and 
     write to disk.
     """
-    dr       = nrow//binfac
-    dc       = ncol//binfac
-    img_out = np.zeros([nimg_per_file*dr, dc, nwav], dtype=np.uint8)
+    dr          = nrow//binfac
+    dc          = ncol//binfac
+    img_out     = np.zeros([nimg_per_file*dr, dc, nwav], dtype=np.uint8)
     for gid, tflist in sublist.items():
+        filenumbers = []
         for ii,tfile in enumerate(tflist):
-            ext = tfile[-3:].lower()
+            filenumbers.append(str(tfile[1]))
+            ext = tfile[0][-3:].lower()
             if ext == 'png':
-                img_out[dr*ii:dr*(ii+1)] = imread(tfile, mode="RGB") \
+                img_out[dr*ii:dr*(ii+1)] = imread(tfile[0], mode="RGB") \
                     [::binfac, ::binfac]
             elif ext == 'raw':
-                img_out[dr*ii:dr*(ii+1)] = np.fromfile(tfile, dtype=np.uint8) \
+                img_out[dr*ii:dr*(ii+1)] = np.fromfile(tfile[0], dtype=np.uint8) \
                     .reshape(nrow, ncol, nwav)[::binfac, ::binfac, ::-1]
             else:
-                logger.error("File format not supported "+str(tfile))
-        newfname = os.path.join(dpath, "{0}.raw".format(gid))
-        logger.info("Writing group: "+str(gid))
+                logger.error("File format not supported "+\
+                                 str(tfile[0]) + "fnumber: "+\
+                                 str(tfile[1]))
+        #newfname = os.path.join(dpath, "{0}.raw".format(gid))
+        newfname = os.path.join(dpath, "_".join([filenumbers[0], 
+                                                 filenumbers[-1]])+str(".raw"))
+        logger.info("Writing filename: "+str(newfname))
         img_out.tofile(newfname)
         img_out[:] = 0
     conn.close()
@@ -52,20 +58,20 @@ if __name__ == "__main__":
         
     # set start and end times
     st_date = "2013.11.17"
-    st_time = "15.00.00"
+    st_time = "17.00.00"
     en_date = "2013.11.17"
-    en_time = "15.59.59"
+    en_time = "23.59.59"
 
     st = datetime(*[int(i) for i in st_date.split(".") + st_time.split(".")])
     en = datetime(*[int(i) for i in en_date.split(".") + en_time.split(".")])
 
     # -- get all the files between st and en
     if f_dbname:
-        logger.info("Fetching file locations from database")
+        logger.info("Fetching file locations from database. This will return fname, fpath and fnumber")
         file_list = get_files(f_dbname, st, en)
     else:
         logger.warning("Database not found. Process continue by scanning filesystem")
-        logger.warning("This might take longer")
+        logger.warning("This might take longer and will only return fname and fpath")
         # get files by scanning the file system 
         file_list = []
         file_gen_list = _get_files(inpath, st, en)
@@ -75,7 +81,7 @@ if __name__ == "__main__":
     nin = len(file_list)
 
     # -- set the binning and determine the number of output files
-    binfac        = 2
+    binfac        = 8
     nimg_per_file = 4 * binfac * binfac
     nout          = nin // nimg_per_file + 1*((nin % nimg_per_file) > 0)
 
@@ -125,18 +131,17 @@ if __name__ == "__main__":
 
     # set the group ids
     for k, v in flist_out.items():
-        tasks.put(UpdateTask(flist=v, values_to_update={'gid':k}))
+        tasks.put(UpdateTask(flist=[_file[0] for _file in v], values_to_update={'gid':k}))
 
     # export the table filtered by modified values
-    tasks.put(ToCSV(where_clause='gid', compare_value=range(22)))
+    tasks.put(ToCSV(where_clause='gid', compare_value=range(len(flist_out.keys()))))
 
     _poison_workers(tasks)
-        
+
     # -- initialize workers and execute
     parents, childs, ps = [], [], []
     result = []
     groups_per_proc = [flist_out.keys()[i::nproc] for i in range(nproc)]
-
     logger.info("Starting stacking process")
     for ip in range(nproc):
         ptemp, ctemp = multiprocessing.Pipe()
@@ -154,4 +159,3 @@ if __name__ == "__main__":
 
     # -- Join all processes
     dum = [ps[ip].join() for ip in range(nproc)]
-

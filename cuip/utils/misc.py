@@ -1,6 +1,7 @@
 import os
 import psycopg2
 import multiprocessing
+import pandas as pd
 from datetime import datetime, timedelta
 from cuip.cuip.utils import cuiplogger
 logger = cuiplogger.cuipLogger(loggername="MISC", tofile=False)
@@ -56,7 +57,7 @@ class asynchronous(object):
             return self.result
 
 
-def get_files(dbname, start_datetime, end_datetime):
+def get_files(dbname, start_datetime, end_datetime, df=False):
     """
     Fetch all files between `start_datetime`, and
     `end_datetime` from database `dbname`
@@ -76,18 +77,20 @@ def get_files(dbname, start_datetime, end_datetime):
         list of absolute paths of the files
     """
     f_tbname = os.getenv("CUIP_TBNAME")
-    conn    = psycopg2.connect("dbname='%s'"%(dbname))
-    cur     = conn.cursor()
-    querry  = "SELECT fname, fpath \
-               FROM {tbname}     \
-               WHERE timestamp     \
-               BETWEEN %(start)s and %(end)s;".format(tbname=f_tbname)
-    cur.execute(querry, {'start': start_datetime,
-                         'end'  : end_datetime})
-    rows    = cur.fetchall()
-    # join filename with filepath
-    files   = [os.path.join(x[1], x[0]) for x in rows]
-    return files
+    conn     = psycopg2.connect("dbname='%s'"%(dbname))
+    cur      = conn.cursor()
+    query    = "SELECT fname, fpath, fnumber, timestamp \
+                FROM {tbname}     \
+                WHERE timestamp     \
+                BETWEEN %(start)s and %(end)s ORDER BY timestamp;" \
+        .format(tbname=f_tbname)
+
+    if not df:
+        cur.execute(query, {'start': start_datetime, 'end': end_datetime})
+        return [(os.path.join(x[1], x[0]), x[2]) for x in cur.fetchall()]
+    else:
+        return pd.read_sql_query(query, conn, params={'start': start_datetime, 
+                                                      'end': end_datetime})
 
 def _pathrange(basepath, start, end, delta):
     """
@@ -208,3 +211,33 @@ def get_file_generators(inpath, start_datetime, end_datetime, incr=1):
                          end_datetime))
            break
    return files_gen_list
+
+
+def query_db(dbname, start_datetime, end_datetime, columns=[]):
+    """
+    Grab columns from dbname.
+    """
+    f_tbname = os.getenv("CUIP_TBNAME")
+    conn     = psycopg2.connect("dbname='%s'"%(dbname))
+    cur      = conn.cursor()
+
+    # -- if columns is empty, print columns
+    if len(columns) == 0:
+        query = "SELECT * from {tbname} LIMIT 0;".format(tbname=f_tbname)
+        cur.execute(query)
+
+        print("Columns available in {0} are:".format(f_tbname))
+        for col in [i[0] for i in cur.description]:
+            print(col)
+
+        return
+
+    cols  = ",".join(columns)
+    query = "SELECT {colstr} \
+             FROM {tbname}     \
+             WHERE timestamp     \
+             BETWEEN %(start)s and %(end)s ORDER BY timestamp;" \
+        .format(colstr=cols, tbname=f_tbname)
+
+    return pd.read_sql_query(query, conn, params={'start': start_datetime, 
+                                                  'end': end_datetime})
