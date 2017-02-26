@@ -1,33 +1,38 @@
 import numpy as np
 import os
-import sys
+import os.path
 import glob
-
+im
 import pylab as pl
-import datetime
+import datetim as dt
+
 
 from PIL import Image
 
 
 home = '/projects/projects/project-uo_visible_plumes/workspace/share/plumes/'
+root = '/home/cusp/ir729/cuip/cuip/plumes/IlanImgProc/'
 
-index = np.load('/home/cusp/ir729/cuip/cuip/plumes/IlanImgProc/index.npy')
-skyline = np.load('/home/cusp/ir729/cuip/cuip/plumes/IlanImgProc/img1_skyline.npy')
+sl_idx = np.load(root + 'skyline_idx.npy')
+city_idx  = np.load(root + 'city_idx.npy')
+sky_idx = np.load(root + 'sky_idx.npy')
+skyline = np.load(root + 'img1_skyline.npy')
 
+dir_gen = os.walk(home)
 
-#file_path = '/projects/projects/project-uo_visible_plumes/workspace/share/plumes/'
 path = glob.glob('*.raw')
 
-image_list = []
 
-def img2D(image):
-	im = np.fromfile(image, np.uint8)
+def img2D(file_path):
+	im = np.fromfile(file_path, np.uint8)
 	im = im.astype(float)
 	im *= 255 / im.max()
 	im2d = (im.reshape([2160, 4096, 3]).sum(2) / 3.)
 	im2d /= im2d.max()
 	return im2d
 
+
+#Still need tweaking and revision
 def get_index(list):
 	new_list = []
 	for item in list:
@@ -42,21 +47,51 @@ def get_dir_name(dir_path):
 		if os.path.isdir(item) == True:
 			dirs.append(item)
 	return dirs
-
-#use the string from the list of directories and create a time vector 
-def time_vector(string):
+#generate a dictioary with the name of the subdirectories and the corresponding timestamp to each image
+def time_tree(generator):
 	n_photos = 40
-	v = datetime.strptime(string, '%H.%M.%S')
-	time_v = v + n_photos * datetime.timedelta(seconds = 10)
-	return time_v
+	time_tree = {}
+	for root_path, dirs, files in generator:
+		time = os.path.basename(root_path)
+		base = datetime.datetime.strptime(time, '%H.%M.%S')
+		time_tree[time] = [base + datetime.timedelta(seconds = i*10) for i in range(0,n_photos)]
+		
+	return time_tree
 
 
-def get_images(dir_path, dir_list):
-	img = {}
-	for item in dir_list:
-		fldr = os.path.join(dir_path, item)
-		for root, dirs, files in os.walk(fldr):
-			img[item] = files
+def get_images(generator):
+	path_tree = {}
+	for root_path, dirs, files in generator:
+		path_tree[os.path.basename(root_path)] = [os.path.join(root_path, file_path) for file_path in files]
+	return path_tree
 
-	return img
+def read_img(dictionary):
+	img_tree = {}
+	for key in dictionary:
+		img_list = []
+		for item in dictionary[key]:
+			im = im2D(item)
+			img_list.append(im)
+		img_tree[key] = img_list
+		
+	return img_tree
 
+
+if __name__ == '__main__':
+	home = '/projects/projects/project-uo_visible_plumes/workspace/share/plumes/'
+	root = '/home/cusp/ir729/cuip/cuip/plumes/IlanImgProc/'
+
+	sl_idx = np.load(root + 'skyline_idx.npy')
+	city_idx  = np.load(root + 'city_idx.npy')
+	sky_idx = np.load(root + 'sky_idx.npy')
+	skyline = np.load(root + 'img1_skyline.npy')
+	dir_gen = os.walk(home)
+
+	
+	
+	t_dict =  time_tree(dir_gen)
+	img_dict = get_images(dir_gen)
+	img_vector = read_img(img_dict)
+
+#At this point I should still get the indexes to each image and then merge both dictionaries 
+#in such a way that I hava dataframe that I can use to create the timeseries
