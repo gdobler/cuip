@@ -4,7 +4,6 @@
 import os
 import numpy as np
 import pandas as pd
-import scipy.ndimage.measurements as ndm
 import scipy.ndimage.measurements as spm
 from cuip.cuip.registration.uo_tools import read_raw
 
@@ -21,7 +20,7 @@ srcs = np.zeros((nrow, ncol), dtype=bool)
 srcs[buff:-buff, buff:-buff] = np.fromfile(wins, int) \
     .reshape(nrow - 2 * buff, ncol - 2 * buff) \
     .astype(bool)
-labs = ndm.label(srcs)
+labs = spm.label(srcs)
 nlab = labs[1]
 
 
@@ -43,7 +42,7 @@ rot      = np.zeros_like(labs[0])
 
 # -- initialize the plotting window
 plt.close("all")
-fig, ax = plt.subplots(figsize=(10, 10), num=1)
+fig, ax = plt.subplots(figsize=(5, 5), num=1)
 fig.subplots_adjust(0, 0, 1, 1)
 ax.axis("off")
 im = ax.imshow(np.zeros((100, 100, 3), dtype=np.uint8))
@@ -82,4 +81,4 @@ slen = 50
 
 im.set_data(img[r0-slen:r0+slen, c0-slen:c0+slen])
 fig.canvas.draw()
-plt.wait(1e-3)
+plt.pause(1e-3)
