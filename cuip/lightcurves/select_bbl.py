@@ -11,12 +11,15 @@ def select_bbl():
     Return BBL at selected position.
     """
 
+    # -- set suplemental data directory
+    supl = os.getenv("CUIP_SUPPLEMENTARY")
+
     # -- get reference image
     ref = get_reference_image()
 
     # -- get the BBL map
     buff  = 20
-    bname = os.path.join("..", "data", "12_3_14_bblgrid_clean.npy")
+    bname = os.path.join(supl, "12_3_14_bblgrid_clean.npy")
     bmap  = np.zeros((ref.shape[0], ref.shape[1]))
     bmap[buff:-buff, buff:-buff] = np.load(bname)
 
