@@ -102,7 +102,7 @@ if __name__ == "__main__":
     # -- write to file
     lopen.write("\nWriting to npy...\n========\n")
     lopen.flush()
-    np.save(oname, lcs[:ii])
+    np.save(oname, lcs)
     lopen.write("FINISHED in {0}s\n".format(time.time() - t0))
     lopen.flush()
     lopen.close()
