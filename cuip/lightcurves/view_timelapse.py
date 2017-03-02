@@ -9,7 +9,7 @@ from cuip.cuip.registration.uo_tools import read_raw
 
 
 lind = 3245 # see get_subset.py
-
+tind = 10
 
 # -- get the source labels
 nrow = 2160
@@ -25,8 +25,12 @@ nlab = labs[1]
 
 
 # -- open registration dictionary
-reg = pd.read_csv("../registration/output/register_0000.csv", 
+reg = pd.read_csv("../registration/output/register_{0:04}.csv".format(tind), 
                   parse_dates=["timestamp"])
+
+
+# -- read the light curves
+lcs = np.load("output/light_curves_{0:04}.npy".format(tind))
 
 
 # -- utilities
