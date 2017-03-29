@@ -16,8 +16,19 @@ def read_raw(fname):
         .reshape(2160, 4096, 3)[..., ::-1]
 
 # -- set start and end times
-date1 = "2013.11.02"
-date2 = "2013.11.03"
+syn   = "\n  syntax is \n    python make_timelapse.py y1.m1.d1 y2.m2.d2\n"
+
+try:
+    date1 = sys.argv[1]
+    date2 = sys.argv[2]
+except:
+    print(syn)
+    sys.exit()
+
+if "." not in date1 or "." not in date2:
+    print(syn)
+    sys.exit()
+
 y1, m1, d1 = [int(i) for i in date1.split(".")]
 y2, m2, d2 = [int(i) for i in date2.split(".")]
 
