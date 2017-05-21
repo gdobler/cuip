@@ -23,6 +23,7 @@ ipynb_checkpoin[ts]/*
 output/
 no_share/
 data/
+timelapse*
 
 # Temporary data directories
 data
