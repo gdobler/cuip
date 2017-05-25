@@ -24,11 +24,23 @@ print("smoothing lightcurves...")
 msk_sm = gf(msk.astype(float), (width, 0))
 lcs_sm = gf(lcs * msk, (width, 0)) / (msk_sm + (msk_sm == 0))
 
-# -- compute the gaussian difference and update the mask
-lcs_gd = np.zeros_like(lcs_sm)
-msk_gd = np.zeros_like(msk)
+# -- compute the gaussian difference (using a masked array now)
+lcs_gd = np.ma.zeros(lcs_sm.shape, dtype=lcs_sm.dtype)
 lcs_gd[delta // 2: -delta // 2] = lcs_sm[delta:] - lcs_sm[:-delta]
-msk_gd[delta // 2: -delta // 2] = msk[delta:] * msk[:-delta]
+
+# -- set the gaussian difference mask
+lcs_gd.mask = np.zeros_like(msk)
+lcs_gd.mask[delta // 2: -delta // 2] = msk[delta:] * msk[:-delta]
+
+## GGD: MUST BREAK UP INDIVIDUAL DATES!!!
+
+# -- sigma clip
+for _ in range(10):
+    avg         = lcs_gd.mean(0)
+    sig         = lcs_gd.std(0)
+    lcs_gd.mask = np.abs(dlcg - avg) > sig_clip_amp * sig
+
+
 
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
@@ -70,34 +82,11 @@ def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10,
         dlcg.mask[-width:] = True
 
 
-        # -- plot
-        if see:
-            plt.figure(6)
-            plt.clf()
-            plt.subplot(2,2,2)
-            plt.plot(dlcg[:,0], lw=2)
-            plt.ylim([1.2*dlcg.min(),1.2*dlcg.max()])
-            plt.subplot(2,2,3)
-            plt.plot(dlcg[:,1], lw=2)
-            plt.ylim([1.2*dlcg.min(),1.2*dlcg.max()])
-            plt.subplot(2,2,4)
-            plt.plot(dlcg[:,2], lw=2)
-            plt.ylim([1.2*dlcg.min(),1.2*dlcg.max()])
-
         # -- sigma clip
         for _ in range(10):
             avg = dlcg.mean(0)
             sig = dlcg.std(0)
             dlcg.mask = np.abs(dlcg-avg) > sig_clip_amp*sig
-
-            if see:
-                plt.subplot(2,2,2)
-                plt.plot(dlcg[:,0], lw=2)
-                plt.subplot(2,2,3)
-                plt.plot(dlcg[:,1], lw=2)
-                plt.subplot(2,2,4)
-                plt.plot(dlcg[:,2], lw=2)
-
 
         # -- set mean and std and reset the mask
         avg                = dlcg.mean(0)
