@@ -19,13 +19,16 @@ lcs = np.load(os.path.join("output",
 print("generating mask...")
 msk = gf((lcs > -9999).astype(float), (width, 0)) > 0.9999
 
-# -- smooth the lightcurves (taking into account the mask)
+# -- convert to smooth the lightcurves (taking into account the mask)
 print("smoothing lightcurves...")
 msk_sm = gf(msk.astype(float), (width, 0))
 lcs_sm = gf(lcs * msk, (width, 0)) / (msk_sm + (msk_sm == 0))
 
-# -- compute the gaussian difference
-lcs_gd = lcs_sm[delta:] - lcs_sm[:-delta]
+# -- compute the gaussian difference and update the mask
+lcs_gd = np.zeros_like(lcs_sm)
+msk_gd = np.zeros_like(msk)
+lcs_gd[delta // 2: -delta // 2] = lcs_sm[delta:] - lcs_sm[:-delta]
+msk_gd[delta // 2: -delta // 2] = msk[delta:] * msk[:-delta]
 
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
