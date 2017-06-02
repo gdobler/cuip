@@ -4,16 +4,18 @@
 import os
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter as gf
+execfile("split_days.py")
 
 # -- utilities
-night = 0
-width = 30
-delta = 2
+file_index   = 0
+width        = 30
+delta        = 2
+sig_clip_amp = 2.0
 
 # -- read in lightcurves and convert to grayscale
-print("reading lightcurves for night {0}".format(night))
-lcs = np.load(os.path.join("output", 
-                           "light_curves_{0:04}.npy".format(night))).mean(-1)
+print("reading lightcurves for nights index {0}".format(file_index))
+lcs = np.load(os.path.join("output", "light_curves_{0:04}.npy" \
+                               .format(file_index))).mean(-1)
 
 # -- generate a mask
 print("generating mask...")
@@ -32,54 +34,24 @@ lcs_gd[delta // 2: -delta // 2] = lcs_sm[delta:] - lcs_sm[:-delta]
 lcs_gd.mask = np.zeros_like(msk)
 lcs_gd.mask[delta // 2: -delta // 2] = msk[delta:] * msk[:-delta]
 
-## GGD: MUST BREAK UP INDIVIDUAL DATES!!!
+# -- get the indices of the date separators and create the individual dates
+dind_lo = list(split_days(file_index))
+dind_hi = dind_lo[1:] + [lcs_gd.shape[0]]
+nights  = [lcs_gd[i:j] for i, j in zip(dind_lo, dind_hi)]
 
 # -- sigma clip
-for _ in range(10):
-    avg         = lcs_gd.mean(0)
-    sig         = lcs_gd.std(0)
-    lcs_gd.mask = np.abs(dlcg - avg) > sig_clip_amp * sig
+for ii in range(len(nights)):
+    print("working on night {0}".format(ii))
+    for _ in range(10):
+        avg             = nights[ii].mean(0)
+        sig             = nights[ii].std(0)
+        nights[ii].mask = np.abs(nights[ii] - avg) > sig_clip_amp * sig
 
-
+    
 
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
             sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
-
-    # -- defaults
-    if indices==None:
-        nwin    = lcs.lcs.shape[0]
-        indices = range(nwin)
-        print("DST_CANNY1D: running edge detector for all " + 
-              "{0} windows...".format(nwin))
-    else:
-        nwin = len(indices)
-        print("DST_CANNY1D: running edge detector for " + 
-              "{0} windows...".format(nwin))
-
-
-    # -- utilities
-    lcg       = np.zeros(lcs.lcs.shape[1:])
-    dlcg      = np.ma.zeros(lcg.shape)
-    dlcg.mask = dlcg>314
-    ind_onoff = []
-    ints      = np.arange(lcs.lcs.shape[0])
-
-
-    # -- loop through windows
-    for ii, index in enumerate(indices):
-        if ii%100==0:
-            print("DST_CANNY1D:   {0} of {1}".format(ii,nwin))
-
-        # -- smooth each band
-        for band in [0,1,2]:
-            lcg[:,band] = gf(lcs.lcs[index].mean(1),width)
-
-
-        # -- compute Gaussian difference and set mask edges
-        dlcg[:,:]          = np.roll(lcg,-delta,0)-np.roll(lcg,delta,0)
-        dlcg.mask[:width]  = True
-        dlcg.mask[-width:] = True
 
 
         # -- sigma clip
