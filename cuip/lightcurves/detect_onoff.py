@@ -32,7 +32,7 @@ lcs_gd[delta // 2: -delta // 2] = lcs_sm[delta:] - lcs_sm[:-delta]
 
 # -- set the gaussian difference mask
 lcs_gd.mask = np.zeros_like(msk)
-lcs_gd.mask[delta // 2: -delta // 2] = msk[delta:] * msk[:-delta]
+lcs_gd.mask[delta // 2: -delta // 2] = ~(msk[delta:] * msk[:-delta])
 
 # -- get the indices of the date separators and create the individual dates
 dind_lo = list(split_days(file_index))
@@ -47,8 +47,18 @@ for ii in range(len(nights)):
         sig             = nights[ii].std(0)
         nights[ii].mask = np.abs(nights[ii] - avg) > sig_clip_amp * sig
 
+
+rat = [i.max()/i.std() for i in lcs_gd[22:3620].T]
+rat2 = [(abs(i-i.mean()) > 2.0*i.std()).sum() for i in lcs_gd[22:3620].T]
+
     
 
+foo = np.ma.array(lcs_gd[22:3620, 314].copy())
+
+for _ in range(10):    
+    avg = foo.mean()
+    sig = foo.std()
+    foo.mask = np.abs(foo - avg) > sig_clip_amp * sig
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
             sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
