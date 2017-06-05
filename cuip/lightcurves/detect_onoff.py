@@ -11,6 +11,7 @@ file_index   = 0
 width        = 30
 delta        = 2
 sig_clip_amp = 2.0
+sig_peaks    = 10.0
 
 # -- read in lightcurves and convert to grayscale
 print("reading lightcurves for nights index {0}".format(file_index))
@@ -39,43 +40,26 @@ dind_lo = list(split_days(file_index))
 dind_hi = dind_lo[1:] + [lcs_gd.shape[0]]
 nights  = [lcs_gd[i:j] for i, j in zip(dind_lo, dind_hi)]
 
-# -- sigma clip
+# -- sigma clip and reset the means, standard deviations, and masks
+avgs = []
+sigs = []
 for ii in range(len(nights)):
     print("working on night {0}".format(ii))
+    tmsk = nights[ii].mask.copy()
     for _ in range(10):
         avg             = nights[ii].mean(0)
         sig             = nights[ii].std(0)
         nights[ii].mask = np.abs(nights[ii] - avg) > sig_clip_amp * sig
+    avgs.append(nights[ii].mean(0).data)
+    sigs.append(nights[ii].std(0).data)
+    nights[ii].mask = tmsk
 
+# -- tag the potential ons and offs
 
-rat = [i.max()/i.std() for i in lcs_gd[22:3620].T]
-rat2 = [(abs(i-i.mean()) > 2.0*i.std()).sum() for i in lcs_gd[22:3620].T]
-
-    
-
-foo = np.ma.array(lcs_gd[22:3620, 314].copy())
-
-for _ in range(10):    
-    avg = foo.mean()
-    sig = foo.std()
-    foo.mask = np.abs(foo - avg) > sig_clip_amp * sig
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
             sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
 
-
-        # -- sigma clip
-        for _ in range(10):
-            avg = dlcg.mean(0)
-            sig = dlcg.std(0)
-            dlcg.mask = np.abs(dlcg-avg) > sig_clip_amp*sig
-
-        # -- set mean and std and reset the mask
-        avg                = dlcg.mean(0)
-        sig                = dlcg.std(0)
-        dlcg.mask[:,:]     = False
-        dlcg.mask[:width]  = True
-        dlcg.mask[-width:] = True
 
 
         # -- find peaks in RGB
