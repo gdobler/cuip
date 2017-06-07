@@ -4,6 +4,7 @@
 import os
 import numpy as np
 from scipy.ndimage.filters import gaussian_filter as gf
+from scipy.ndimage import correlate1d
 execfile("split_days.py")
 
 # -- utilities
@@ -71,6 +72,22 @@ for ii in range(nnights):
                           (nights[ii][1:-1] < nights[ii][2:]) & \
                           (nights[ii][1:-1] < nights[ii][:-2]) & \
                           ~nights[ii].mask[1:-1]
+
+# -- cross check left/right means for robustness to noise
+mean_diff  = ((np.arange(2 * width) >= width) * 2 - 1) / float(width)
+mean_left  = 1.0 * (np.arange(2 * width) < width) / float(width)
+mean_right = 1.0 * (np.arange(2 * width) >= width) / float(width)
+lcs_md     = correlate1d(lcs, mean_diff, axis=0)
+lcs_sq     = lcs**2
+lcs_std    = np.sqrt(np.maximum(correlate1d(lcs_sq, mean_left, axis=0) - 
+                                correlate1d(lcs, mean_left, axis=0)**2, 
+                                correlate1d(lcs_sq, mean_right, axis=0) - 
+                                correlate1d(lcs, mean_right, axis=0)**2))
+
+
+bar = lcs_md > sig_xcheck * lcs_std
+
+
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
             sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
