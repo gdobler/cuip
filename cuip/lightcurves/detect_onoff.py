@@ -56,8 +56,8 @@ for ii in range(nnights):
     nights[ii].mask = tmsk
 
 # -- tag the potential ons and offs
-tags_on  = [np.zeros(i.shape) for i in nights]
-tags_off = [np.zeros(i.shape) for i in nights]
+tags_on  = [np.zeros(i.shape, dtype=bool) for i in nights]
+tags_off = [np.zeros(i.shape, dtype=bool) for i in nights]
 
 for ii in range(nnights):
     print("finding extrema for night {0} of {1}".format(ii + 1, nnights))
