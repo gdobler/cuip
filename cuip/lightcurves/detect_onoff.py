@@ -39,12 +39,13 @@ lcs_gd.mask[delta // 2: -delta // 2] = ~(msk[delta:] * msk[:-delta])
 dind_lo = list(split_days(file_index))
 dind_hi = dind_lo[1:] + [lcs_gd.shape[0]]
 nights  = [lcs_gd[i:j] for i, j in zip(dind_lo, dind_hi)]
+nnights = len(nights)
 
 # -- sigma clip and reset the means, standard deviations, and masks
 avgs = []
 sigs = []
-for ii in range(len(nights)):
-    print("working on night {0}".format(ii))
+for ii in range(nnights):
+    print("sigma clipping night {0} of {1}".format(ii + 1, nnights))
     tmsk = nights[ii].mask.copy()
     for _ in range(10):
         avg             = nights[ii].mean(0)
@@ -55,61 +56,25 @@ for ii in range(len(nights)):
     nights[ii].mask = tmsk
 
 # -- tag the potential ons and offs
+tags_on  = [np.zeros(i.shape) for i in nights]
+tags_off = [np.zeros(i.shape) for i in nights]
 
+for ii in range(nnights):
+    print("finding extrema for night {0} of {1}".format(ii + 1, nnights))
+    tags_on[ii][1:-1]  = (nights[ii] - avgs[ii] > 
+                          sig_peaks * sigs[ii])[1:-1] & \
+                          (nights[ii][1:-1] > nights[ii][2:]) & \
+                          (nights[ii][1:-1] > nights[ii][:-2]) & \
+                          ~nights[ii].mask[1:-1]
+    tags_off[ii][1:-1] = (nights[ii] - avgs[ii] < 
+                          -sig_peaks * sigs[ii])[1:-1] & \
+                          (nights[ii][1:-1] < nights[ii][2:]) & \
+                          (nights[ii][1:-1] < nights[ii][:-2]) & \
+                          ~nights[ii].mask[1:-1]
 
 def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
             sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
 
-
-
-        # -- find peaks in RGB
-        ind_on_rgb, ind_off_rgb = [], []
-
-        tags_on  = (dlcg-avg > sig_peaks*sig) & \
-            (dlcg>np.roll(dlcg,1,0)) & \
-            (dlcg>np.roll(dlcg,-1,0)) & \
-            ~dlcg.mask
-
-        tags_off = (dlcg-avg < -sig_peaks*sig) & \
-            (dlcg<np.roll(dlcg,1,0)) & \
-            (dlcg<np.roll(dlcg,-1,0)) & \
-            ~dlcg.mask
-
-        for band in [0,1,2]:
-            ind_on_rgb.append([i for i in ints[tags_on[:,band]]])
-            ind_off_rgb.append([ i for i in ints[tags_off[:,band]]])
-
-
-        # -- collapse RGB indices
-        for iind in ind_on_rgb[0]:
-            for jind in ind_on_rgb[1]:
-                if abs(iind-jind)<=2:
-                    ind_on_rgb[1].remove(jind)
-            for jind in ind_on_rgb[2]:
-                if abs(iind-jind)<=2:
-                    ind_on_rgb[2].remove(jind)
-
-        for iind in ind_on_rgb[1]:
-            for jind in ind_on_rgb[2]:
-                if abs(iind-jind)<=2:
-                    ind_on_rgb[2].remove(jind)
-
-        ind_on_list = ind_on_rgb[0] + ind_on_rgb[1] + ind_on_rgb[2]
-
-        for iind in ind_off_rgb[0]:
-            for jind in ind_off_rgb[1]:
-                if abs(iind-jind)<=2:
-                    ind_off_rgb[1].remove(jind)
-            for jind in ind_off_rgb[2]:
-                if abs(iind-jind)<=2:
-                    ind_off_rgb[2].remove(jind)
-
-        for iind in ind_off_rgb[1]:
-            for jind in ind_off_rgb[2]:
-                if abs(iind-jind)<=2:
-                    ind_off_rgb[2].remove(jind)
-
-        ind_off_list = ind_off_rgb[0] + ind_off_rgb[1] + ind_off_rgb[2]
 
 
         # -- cross check left/right means for robustness to noise
