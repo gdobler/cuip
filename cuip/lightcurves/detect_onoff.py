@@ -12,7 +12,8 @@ file_index   = 0
 width        = 30
 delta        = 2
 sig_clip_amp = 2.0
-sig_peaks    = 10.0
+#sig_peaks    = 10.0
+sig_peaks    = 0.0
 sig_xcheck   = 2.0
 
 # -- read in lightcurves and convert to grayscale
@@ -99,45 +100,18 @@ good_arr  = lcs_md > sig_xcheck * lcs_std
 good_ons  = np.vstack([pad] + tags_on) & good_arr
 good_offs = np.vstack([pad] + tags_off) & good_arr
 
-
-def canny1d(lcs, indices=None, width=30, delta=2, see=False, sig_clip_iter=10, 
-            sig_clip_amp=2.0, sig_peaks=10.0, xcheck=True, sig_xcheck=2.0):
-
-
-
-        # -- cross check left/right means for robustness to noise
-        if xcheck:
-            rtwd = np.sqrt(width)
-
-            for on in [_ for _ in ind_on_list]:
-                mn_l  = lcs.lcs[index,on-width:on].mean(1).mean()
-                err_l = lcs.lcs[index,on-width:on].mean(1).std()
-                mn_r  = lcs.lcs[index,on:on+width].mean(1).mean()
-                err_r = lcs.lcs[index,on:on+width].mean(1).std()
-
-                if abs(mn_r-mn_l)<(sig_xcheck*max(err_l,err_r)):
-                    ind_on_list.remove(on)
-
-            for off in [_ for _ in ind_off_list]:
-                mn_l  = lcs.lcs[index,off-width:off].mean(1).mean()
-                err_l = lcs.lcs[index,off-width:off].mean(1).std()
-                mn_r  = lcs.lcs[index,off:off+width].mean(1).mean()
-                err_r = lcs.lcs[index,off:off+width].mean(1).std()
-
-                if abs(mn_r-mn_l)<(sig_xcheck*max(err_l,err_r)):
-                    ind_off_list.remove(off)
+# -- split nights
+ons  = [good_ons[i:j] for i, j in zip(dind_lo, dind_hi)]
+offs = [good_offs[i:j] for i, j in zip(dind_lo, dind_hi)]
+lcsn = [lcs[i:j] for i, j in zip(dind_lo, dind_hi)]
 
 
-        # -- add to on/off list
-        tind_onoff = np.array([i for i in ind_on_list+[-j for j in 
-                                                        ind_off_list]])
-
-        ind_onoff.append(tind_onoff[np.argsort(np.abs(tind_onoff))])
-
-#        if see:
-#            plt.subplot(2,2,2)
-#            plt.plot(np.arange(dlcg.shape[0])[on_ind[:,0]],
-#                     dlcg[on_ind[:,0],0], 'go')
-
-
-    return ind_onoff
+ii = 1800
+clf()
+wwon  = np.where(ons[0][:, ii])[0]
+wwoff = np.where(offs[0][:, ii])[0]
+#wwon  = np.where(tags_on[0][:, ii])[0]
+#wwoff = np.where(tags_off[0][:, ii])[0]
+plot(lcsn[0][:, ii])
+plot(wwon, lcsn[0][wwon, ii], 'go')
+plot(wwoff, lcsn[0][wwoff, ii], 'ro')
