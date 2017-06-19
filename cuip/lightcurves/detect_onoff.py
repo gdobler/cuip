@@ -104,14 +104,3 @@ good_offs = np.vstack([pad] + tags_off) & good_arr
 ons  = [good_ons[i:j] for i, j in zip(dind_lo, dind_hi)]
 offs = [good_offs[i:j] for i, j in zip(dind_lo, dind_hi)]
 lcsn = [lcs[i:j] for i, j in zip(dind_lo, dind_hi)]
-
-
-ii = 1800
-clf()
-wwon  = np.where(ons[0][:, ii])[0]
-wwoff = np.where(offs[0][:, ii])[0]
-#wwon  = np.where(tags_on[0][:, ii])[0]
-#wwoff = np.where(tags_off[0][:, ii])[0]
-plot(lcsn[0][:, ii])
-plot(wwon, lcsn[0][wwon, ii], 'go')
-plot(wwoff, lcsn[0][wwoff, ii], 'ro')
