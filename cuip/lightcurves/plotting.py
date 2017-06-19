@@ -4,7 +4,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-def scroll_onoff_detections():
+def scroll_onoff_detections(nights, ons, offs):
     """
     Scroll through on/off detections for lightcurves.
 
@@ -33,17 +33,17 @@ def scroll_onoff_detections():
         elif key == "up":
             nght[0] += 1
         elif key == "down":
-            nght[1] -= 1
+            nght[0] -= 1
 
         # -- update the data values
-        src_ons  = indices(ons[nght][:, isrc])
-        src_offs = indices(offs[nght][:, isrc])
+        src_ons  = indices[nght[0]][ons[nght[0]][:, isrc[0]]]
+        src_offs = indices[nght[0]][offs[nght[0]][:, isrc[0]]]
         ax.set_xlim(0, indices.size)
 
         # -- update plot
-        lin.set_data(indices[nght], nights[nght][:, isrc])
-        pts_on,  = ax.plot(src_ons, nights[nght][src_ons, isrc])
-        pts_off, = ax.plot(src_ons, nights[nght][src_offs, isrc])
+        lin.set_data(indices[nght[0]], nights[nght[0]][:, isrc[0]])
+        pts_on,  = ax.plot(src_ons, nights[nght[0]][src_ons, isrc[0]])
+        pts_off, = ax.plot(src_offs, nights[nght[0]][src_offs, isrc[0]])
         fig.canvas.draw()
 
         return
@@ -52,14 +52,16 @@ def scroll_onoff_detections():
     indices  = [np.arange(i.shape[0]) for i in nights]
     nght     = [0]
     isrc     = [0]
-    src_ons  = indices(ons[nght][:, isrc])
-    src_offs = indices(offs[nght][:, isrc])
+#    src_ons  = indices[ons[nght[0]][:, isrc[0]]]
+#    src_offs = indices[offs[nght[0]][:, isrc[0]]]
+    src_ons  = indices[nght[0]][ons[nght[0]][:, isrc[0]]]
+    src_offs = indices[nght[0]][offs[nght[0]][:, isrc[0]]]
 
     # -- initialize the plot
     fig, ax  = plt.subplots()
-    lin,     = ax.plot(indices[nght], nights[nght][:, isrc])
-    pts_on,  = ax.plot(src_ons, nights[nght][src_ons, isrc])
-    pts_off, = ax.plot(src_ons, nights[nght][src_offs, isrc])
+    lin,     = ax.plot(indices[nght[0]], nights[nght[0]][:, isrc[0]])
+    pts_on,  = ax.plot(src_ons, nights[nght[0]][src_ons, isrc[0]])
+    pts_off, = ax.plot(src_ons, nights[nght[0]][src_offs, isrc[0]])
     ax.set_ylim(0, 255)
     ax.set_xlim(0, indices.size)
 
