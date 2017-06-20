@@ -9,6 +9,7 @@ from split_days import *
 
 # -- utilities
 file_index   = 0
+# file_index   = 18
 width        = 30
 delta        = 2
 sig_clip_amp = 2.0
@@ -104,3 +105,7 @@ good_offs = np.vstack([pad] + tags_off) & good_arr
 ons  = [good_ons[i:j] for i, j in zip(dind_lo, dind_hi)]
 offs = [good_offs[i:j] for i, j in zip(dind_lo, dind_hi)]
 lcsn = [lcs[i:j] for i, j in zip(dind_lo, dind_hi)]
+
+# -- write on/offs to file
+np.save("output/good_ons_{0:04}.npy".format(file_index), good_ons)
+np.save("output/good_offs_{0:04}.npy".format(file_index), good_offs)
