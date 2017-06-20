@@ -26,7 +26,8 @@ def detect_onoff(file_index):
     
     # -- read in lightcurves and convert to grayscale
     print("reading lightcurves for nights index {0}...".format(file_index))
-    lcs = np.load(os.path.join("output", "light_curves_{0:04}.npy" \
+    lcs = np.load(os.path.join("..", "lightcurves", "output", 
+                               "light_curves_{0:04}.npy" \
                                    .format(file_index))).mean(-1)
     
     # -- generate a mask
