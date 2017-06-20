@@ -114,6 +114,7 @@ def detect_onoff(file_index):
     lcsn = [lcs[i:j] for i, j in zip(dind_lo, dind_hi)]
     
     # -- write on/offs to file
+    print("writing ons/offs to files...")
     np.save("output/good_ons_{0:04}.npy".format(file_index), good_ons)
     np.save("output/good_offs_{0:04}.npy".format(file_index), good_offs)
 
