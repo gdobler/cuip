@@ -42,17 +42,15 @@ pname = os.path.join(os.getenv("CUIP_SUPPLEMENTARY"), "pluto", "mappluto",
                      "Manhattan", "MNMapPLUTO.shp")
 pluto = gp.GeoDataFrame.from_file(pname)
 pluto.set_index(pluto.BBL.astype(int), inplace=True)
-src_landuse = np.array([0.0 if i == 0 else int(pluto.ix[i].LandUse) for i in 
-                        src_bbls])
-
-foo = []
-bad = []
-for ii in src_bbls:
-    try:
-        foo.append(pluto.ix[ii].LandUse)
-    except:
-        bad.append(ii)
-        foo.append(0)
+src_lu = np.zeros(src_bbls.size, dtype=int)
+failed = []
+for ii in range(src_lu.size):
+    if src_bbls[ii] in pluto.BBL:
+        try:
+            src_lu[ii] = int(pluto.ix[src_bbls[ii]].LandUse)
+        except:
+           failed.append((ii, src_bbls[ii]))
 
 
 # -- write labels to file
+np.save("output/source_land_use.npy", src_lu)
