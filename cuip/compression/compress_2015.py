@@ -9,7 +9,6 @@ import time
 import datetime
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from scipy.misc import imsave
 from multiprocessing import Pool
 
@@ -51,102 +50,79 @@ def get_file_times(times_file):
     return
 
 
-# # -- compress a subset of the data
-# def compress_sub(params):
+# -- compress a subset of the data
+def compress_sub(params):
 
-#     # unpack parameters
-#     fnames_sub = params[0][params[3]:params[4]]
-#     paths_sub  = params[1][params[3]:params[4]]
-#     secs_sub   = params[2][params[3]:params[4]]
-#     pnum       = params[5]
-#     sflag      = 0
+    # unpack parameters
+    fnames_sub = params[0][params[2]:params[3]]
+    secs_sub   = params[1][params[2]:params[3]]
+    pnum       = params[4]
+    sflag      = 0
 
-#     # image utilities
-#     sh = (2160, 4096, 3)
+    # image utilities
+    sh = (2160, 4096, 3)
     
-#     # open an error log
-#     lopen = open("../output/compress_file_proc{0:02}.log".format(pnum), "w")
+    # open an error log
+    lopen = open(os.path.join("output", "compress_file_proc{0:02}.log" \
+                                  .format(pnum)), "w")
 
-#     for fname, fpath, ftime in zip(fnames_sub, paths_sub, secs_sub):
-#         lopen.flush()
-#         try:
-#             ofile = os.path.join(fpath, fname.split("/")[-1][:-4] + ".png")
-#             imsave(ofile, 
-#                    np.fromfile(fname, np.uint8).reshape(sh)[:,:,::-1])
-#         except:
-#             lopen.write("{0} failed to convert to {1}\n".format(fname,ofile))
-#             sflag = 1
-#             continue
-#         try:
-#             os.utime(ofile, (ftime, ftime))
-#         except:
-#             lopen.write("{0} failed to set timestamp\n".format(fname))
-#             sflag = 1
-#             continue
-#         try:
-#             pngsz = os.path.getsize(ofile)
-#         except:
-#             lopen.write("{0} failed to get filesize\n".format(fname))
-#             sflag = 1
-#             continue
-#         try:
-#             os.remove(fname)
-#         except:
-#             lopen.write("{0} failed to remove file\n".format(fname))
-#             sflag = 1
+    for fname, ftime in zip(fnames_sub, secs_sub):
+        lopen.flush()
+        try:
+            ofile = fname[:-3] + "png"
+            imsave(ofile, np.fromfile(fname, np.uint8).reshape(sh)[:,:,::-1])
+        except:
+            lopen.write("{0} failed to convert to {1}\n".format(fname, ofile))
+            sflag = 1
+            continue
+        try:
+            os.utime(ofile, (ftime, ftime))
+        except:
+            lopen.write("{0} failed to set timestamp\n".format(fname))
+            sflag = 1
+            continue
+        try:
+            pngsz = os.path.getsize(ofile)
+        except:
+            lopen.write("{0} failed to get filesize\n".format(fname))
+            sflag = 1
+            continue
+        try:
+            os.remove(fname)
+        except:
+            lopen.write("{0} failed to remove file\n".format(fname))
+            sflag = 1
 
-#     # close the error log
-#     lopen.close()
+    # close the error log
+    lopen.close()
 
-#     return sflag
+    return sflag
 
 
-# def compress_files():
-#     """
-#     Compress the data to PNG and move to directory tree.
-#     """
+def compress_files(times_file):
+    """
+    Compress the data to PNG and remove RAW file.
+    """
 
-#     # -- set the path
-#     dpath = "../data00"
+    # -- get the filenames and times
+    print("reading file times...")
+    times  = pd.read_csv(times_file)
+    fnames = times.filename.values
+    secs   = times.time.values
     
-#     # -- get the times
-#     print("reading file times...")
-#     times = pd.read_csv("../output/mohit_file_times.csv")
-#     ntime = len(times)
-#     yrs   = times.year.values
-#     mos   = times.month.values
-#     dys   = times.day.values
-#     hrs   = times.hour.values
-#     mns   = times.minutes.values
-#     secs  = times.time.values
-    
-#     # -- loop through times and create a directory if need be 
-#     print("generating paths...")
-#     paths = np.array([os.path.join(dpath,str(yrs[ii]),
-#                                    "{0:02}".format(int(mos[ii])),
-#                                    "{0:02}".format(int(dys[ii])),
-#                                    "{0:02}.{1:02}.00"\
-#                                        .format(int(hrs[ii]),
-#                                                int(mns[ii])//5*5)) 
-#                       for ii in range(ntime)])
-    
-#     # -- set the filenames
-#     fnames = times.filename.values
-    
-#     # -- loop through filenames and compress
-#     nimg  = len(times)
-#     nproc = 8
-#     dr    = int(float(nimg)/nproc + 0.5)
-#     t0    = time.time()
-#     plist = [(fnames, paths, secs, i*dr, (i+1)*dr, i) for i in range(nproc)]
-#     tpool = Pool()
-#     res   = tpool.map(compress_sub, plist)
+    # -- loop through filenames and compress
+    nimg  = len(times)
+    nproc = 8
+    dr    = int(float(nimg) / nproc + 0.5)
+    t0    = time.time()
+    plist = [(fnames, secs, i * dr, (i + 1) * dr, i) for i in range(nproc)]
+    tpool = Pool()
+    res   = tpool.map(compress_sub, plist)
+    dt    = time.time() - t0
+    print("ellapsed time  {0}s".format(dt))
+    print("time per image {0}s".format(dt / nimg))
 
-#     dt = time.time() - t0
-#     print("ellapsed time  {0}s".format(dt))
-#     print("time per image {0}s".format(dt/nimg))
-
-#     return
+    return
 
 
 if __name__=="__main__":
@@ -158,4 +134,4 @@ if __name__=="__main__":
         get_file_times(times_file)
 
     # -- move files
-    # compress_files()
+    compress_files(times_file)
