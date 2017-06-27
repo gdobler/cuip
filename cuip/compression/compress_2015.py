@@ -15,8 +15,7 @@ from multiprocessing import Pool
 
 def get_file_times(times_file):
     """
-    Get the file times for the files that Mohit moved to the 10TB partition
-    and write to a file (just in case...).
+    Get the file times.
     """
 
     # -- get the file list
@@ -50,19 +49,21 @@ def get_file_times(times_file):
     return
 
 
-# -- compress a subset of the data
 def compress_sub(params):
+    """
+    Compress a subset of the data.
+    """
 
-    # unpack parameters
+    # -- unpack parameters
     fnames_sub = params[0][params[2]:params[3]]
     secs_sub   = params[1][params[2]:params[3]]
     pnum       = params[4]
     sflag      = 0
 
-    # image utilities
+    # -- image utilities
     sh = (2160, 4096, 3)
     
-    # open an error log
+    # -- open an error log
     lopen = open(os.path.join("output", "compress_file_proc{0:02}.log" \
                                   .format(pnum)), "w")
 
@@ -93,7 +94,7 @@ def compress_sub(params):
             lopen.write("{0} failed to remove file\n".format(fname))
             sflag = 1
 
-    # close the error log
+    # -- close the error log
     lopen.close()
 
     return sflag
