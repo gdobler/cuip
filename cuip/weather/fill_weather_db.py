@@ -1,0 +1,95 @@
+#!/usr/bin/env python
+# -*- coding: utf-8 -*-
+
+import os
+import bs4
+import datetime
+import pandas as pd
+import psycopg2 as pg2
+
+
+def get_wu_html():
+    """ Get the Weather Underground HTML files. """
+
+    # -- get date range
+    st    = datetime.datetime(2013, 10, 1)
+    en    = datetime.datetime(2017, 10, 27)
+    nday  = (en - st).days + 1
+    dlist = [d for d in (st + datetime.timedelta(i) for i in range(nday))]
+
+    # -- grab html files
+    opath = os.path.join("output", "wunderhtml")
+    hbase = "https://www.wunderground.com/history/airport/KNYC/" \
+            "{0:04}/{1:02}/{2:02}/DailyHistory.html"
+    for date in dlist:
+        yr    = date.year
+        mo    = date.month
+        dy    = date.day
+        html  = hbase.format(yr, mo, dy)
+        hfile = os.path.join(opath, "DailyHistory_{0:04}_{1:02}_{2:02}.html" \
+                             .format(yr, mo, dy))
+
+        if not os.path.isfile(hfile):
+            os.system("wget {0}".format(html))
+            os.system("mv DailyHistory.html {0}".format(hfile))
+
+    return
+
+
+def parse_wu_table(yr, mo, dy):
+    """ Parse a Weather Underground HTML table. """
+
+    # -- set the file
+    html  = os.path.join("output", "wunderhtml",
+                         "DailyHistory_{0:04}_{1:02}_{2:02}.html" \
+                         .format(yr, mo, dy))
+    fopen = open(html, "r")
+    soup  = bs4.BeautifulSoup(fopen, "html.parser")
+
+    # -- get header
+    hdr = [i.text for i in soup.find("table",
+                                    attrs={"class" : "obs-table responsive"}) \
+           .find("thead").find_all("tr")[0].find_all("th")]
+
+    # -- get the hourly weather table from html
+    rows = soup.find("table", attrs={"class" : "obs-table responsive"}) \
+               .find("tbody").find_all("tr")
+    tbl  = [[ele.text.strip() for ele in row.find_all("td")] for row in rows]
+    fopen.close()
+
+    # -- convert to dataframe
+    cols = ["Time (EDT)", "Temp.", "Humidity", "Precip"]
+    data = pd.DataFrame(tbl, columns=hdr)[cols]
+
+    # -- parse columns
+    def time_to_datetime(tstr):
+        """ Convert Weather Underground EST to datetime. """
+
+        return datetime.datetime.strptime("{0:04}/{1:02}/{2:02} " \
+                                          .format(yr, mo, dy) + tstr,
+                                          "%Y/%m/%d %I:%M %p")
+
+    data["Time (EDT)"] = data["Time (EDT)"].apply(time_to_datetime)
+    data["Temp."]      = [float(i[:-3]) for i in data["Temp."]]
+    data["Humidity"]   = [float(i[:-1]) for i in data["Humidity"]]
+    data["Precip"]     = [0.0 if i == "N/A" else float(i[:-3]) for i in
+                          data["Precip"]]
+
+    return data
+
+
+
+
+
+st    = datetime.datetime(2013, 10, 1)
+en    = datetime.datetime(2017, 10, 27)
+nday  = (en - st).days + 1
+dlist = [d for d in (st + datetime.timedelta(i) for i in range(nday))]
+
+yr = dlist[0].year
+mo = dlist[0].month
+dy = dlist[0].day
+data = parse_wu_table(yr, mo, dy)
+
+for dd in dlist[1:30]:
+    data = data.append(parse_wu_table(dd.year, dd.month, dd.day))
