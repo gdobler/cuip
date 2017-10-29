@@ -2,10 +2,11 @@
 # -*- coding: utf-8 -*-
 
 import os
+import sys
 import bs4
 import datetime
 import pandas as pd
-import psycopg2 as pg2
+from sqlalchemy import create_engine
 
 
 def get_wu_html():
@@ -58,9 +59,13 @@ def parse_wu_table(yr, mo, dy):
     fopen.close()
 
     # -- convert to dataframe
-    cols = ["Time (EDT)", "Temp.", "Humidity", "Precip"]
+    if any(["EDT" in i for i in hdr]):
+        cols = ["Time (EDT)", "Temp.", "Humidity", "Precip"]
+    else:
+        cols = ["Time (EST)", "Temp.", "Humidity", "Precip"]
     data = pd.DataFrame(tbl, columns=hdr)[cols]
-
+    data.columns = ["time", "temp", "humidity", "precip"]
+    
     # -- parse columns
     def time_to_datetime(tstr):
         """ Convert Weather Underground EST to datetime. """
@@ -68,28 +73,54 @@ def parse_wu_table(yr, mo, dy):
         return datetime.datetime.strptime("{0:04}/{1:02}/{2:02} " \
                                           .format(yr, mo, dy) + tstr,
                                           "%Y/%m/%d %I:%M %p")
-
-    data["Time (EDT)"] = data["Time (EDT)"].apply(time_to_datetime)
-    data["Temp."]      = [float(i[:-3]) for i in data["Temp."]]
-    data["Humidity"]   = [float(i[:-1]) for i in data["Humidity"]]
-    data["Precip"]     = [0.0 if i == "N/A" else float(i[:-3]) for i in
-                          data["Precip"]]
+    try:
+        data["time"]     = data["time"].apply(time_to_datetime)
+        data["temp"]     = pd.to_numeric(data["temp"] \
+                                .apply(lambda x: x.encode("ascii", "ignore") \
+                                        .replace("F", "")), errors="coerce")
+        data["humidity"] = pd.to_numeric([i[:-1] for i in
+                                          data["humidity"]], errors="coerce")
+        data["precip"]   = [0.0 if i == "N/A" else float(i[:-3]) for i in
+                            data["precip"]]
+    except:
+        import pdb
+        pdb.set_trace()
+    
+    # -- remove nans
+    data.dropna(inplace=True)
 
     return data
 
 
+def fill_weather_db():
+    """ Fill the Weather Underground weather database. """
+
+    # -- set the date range
+    st    = datetime.datetime(2013, 10, 1)
+    en    = datetime.datetime(2017, 10, 27)
+    nday  = (en - st).days + 1
+    dlist = [d for d in (st + datetime.timedelta(i) for i in range(nday))]
+
+    # -- initialize the engine
+    engine = create_engine("postgresql:///weather_underground")
+    
+    # -- add each day to database
+    for ii, dd in enumerate(dlist):
+        if (ii + 1) % 100 == 0:
+            print("\radding day {0} of {1}".format(ii + 1, nday)),
+            sys.stdout.flush()
+
+        yr   = dd.year
+        mo   = dd.month
+        dy   = dd.day
+        data = parse_wu_table(yr, mo, dy)
+
+        data.to_sql("knyc_conditions", engine, if_exists="append", index=False)
+
+    return
 
 
+if __name__ == "__main__":
 
-st    = datetime.datetime(2013, 10, 1)
-en    = datetime.datetime(2017, 10, 27)
-nday  = (en - st).days + 1
-dlist = [d for d in (st + datetime.timedelta(i) for i in range(nday))]
-
-yr = dlist[0].year
-mo = dlist[0].month
-dy = dlist[0].day
-data = parse_wu_table(yr, mo, dy)
-
-for dd in dlist[1:30]:
-    data = data.append(parse_wu_table(dd.year, dd.month, dd.day))
+    # -- run it
+    fill_weather_db()
