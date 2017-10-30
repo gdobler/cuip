@@ -14,7 +14,7 @@ def get_wu_html():
 
     # -- get date range
     st    = datetime.datetime(2013, 10, 1)
-    en    = datetime.datetime(2017, 10, 27)
+    en    = datetime.datetime(2017, 10, 29)
     nday  = (en - st).days + 1
     dlist = [d for d in (st + datetime.timedelta(i) for i in range(nday))]
 
@@ -35,6 +35,20 @@ def get_wu_html():
             os.system("mv DailyHistory.html {0}".format(hfile))
 
     return
+
+
+def parse_daily_precipitation(soup):
+    """ Pull off the daily precipitation total. """
+
+    # -- find the table row
+    attrs = {"id" : "historyTable"}
+    prow  = [i.find_all("td") for i in soup.find("table", attrs=attrs) \
+             .find("tbody").find_all("tr") if "Precipitation" in i.text][1]
+
+    # -- get the daily value column text, encode ascii, strip, cast as float
+    val = prow[1].text.encode("ascii", "ignore")
+
+    return float(val.replace("\n", "").replace("in", "").replace(" ", ""))
 
 
 def parse_wu_table(yr, mo, dy):
@@ -73,21 +87,18 @@ def parse_wu_table(yr, mo, dy):
         return datetime.datetime.strptime("{0:04}/{1:02}/{2:02} " \
                                           .format(yr, mo, dy) + tstr,
                                           "%Y/%m/%d %I:%M %p")
-    try:
-        data["time"]     = data["time"].apply(time_to_datetime)
-        data["temp"]     = pd.to_numeric(data["temp"] \
+
+    data["time"]     = data["time"].apply(time_to_datetime)
+    data["temp"]     = pd.to_numeric(data["temp"] \
                                 .apply(lambda x: x.encode("ascii", "ignore") \
                                         .replace("F", "")), errors="coerce")
-        data["humidity"] = pd.to_numeric([i[:-1] for i in
-                                          data["humidity"]], errors="coerce")
-        data["precip"]   = [0.0 if i == "N/A" else float(i[:-3]) for i in
-                            data["precip"]]
-    except:
-        import pdb
-        pdb.set_trace()
-    
-    # -- remove nans
-    data.dropna(inplace=True)
+    data["humidity"] = pd.to_numeric([i[:-1] for i in
+                                      data["humidity"]], errors="coerce")
+    data["precip"]   = [0.0 if i == "N/A" else float(i[:-3]) for i in
+                        data["precip"]]
+
+    # -- add daily precipitation
+    data["daily_precip"] = [parse_daily_precipitation(soup)] * len(data)
 
     return data
 
@@ -123,4 +134,5 @@ def fill_weather_db():
 if __name__ == "__main__":
 
     # -- run it
+    get_wu_html()
     fill_weather_db()
