@@ -46,9 +46,14 @@ def parse_daily_precipitation(soup):
              .find("tbody").find_all("tr") if "Precipitation" in i.text][1]
 
     # -- get the daily value column text, encode ascii, strip, cast as float
-    val = prow[1].text.encode("ascii", "ignore")
+    val = prow[1].text.encode("ascii", "ignore").replace("\n", "") \
+                                            .replace("in", "").replace(" ", "")
 
-    return float(val.replace("\n", "").replace("in", "").replace(" ", ""))
+    # -- per WU, "T" stands for trace precipitation detected
+    if valt == "T":
+        return 0.0
+    else:
+        return float(val)
 
 
 def parse_wu_table(yr, mo, dy):
