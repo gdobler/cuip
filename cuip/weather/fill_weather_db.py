@@ -50,7 +50,7 @@ def parse_daily_precipitation(soup):
                                             .replace("in", "").replace(" ", "")
 
     # -- per WU, "T" stands for trace precipitation detected
-    if valt == "T":
+    if val == "T":
         return 0.0
     else:
         return float(val)
