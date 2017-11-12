@@ -7,6 +7,7 @@ import os
 import sys
 import time
 import datetime
+import glob
 import numpy as np
 import pandas as pd
 from scipy.misc import imsave
@@ -51,6 +52,36 @@ def get_file_times(times_file):
     return
 
 
+def get_file_times_fast(times_file):
+    """
+    Get the file times.
+    """
+
+    # -- get the file list
+    dpath = os.path.join(os.environ["AUDUBON_DATA"])
+    flist = sorted(glob.glob(os.path.join(dpath, "*_night", "*.raw")))
+    nfile = len(flist)
+    print("got full list of {0} files".format(nfile))
+
+
+    # -- get the times and write to file
+    fopen = open(times_file, "w")
+    fopen.write("filename,time,year,month,day,hour,minutes,seconds\n")
+    for ii, tfile in enumerate(flist):
+        if (ii + 1) % 10000 == 0:
+            print("\rgetting times for file {0} of {1}".format(ii + 1, nfile)),
+            sys.stdout.flush()
+        mtime = os.path.getmtime(tfile)
+        dt    = datetime.datetime.fromtimestamp(mtime)
+        fopen.write("{0},{1},{2},{3},{4},{5},{6},{7}\n" \
+                        .format(tfile, mtime, dt.year, dt.month, dt.day,
+                                dt.hour, dt.minute, dt.second))
+    fopen.close()
+    print("wrote filenames and times to file {0}".format(times_file))
+
+    return
+
+
 def compress_sub(params):
     """
     Compress a subset of the data.
@@ -67,7 +98,7 @@ def compress_sub(params):
     
     # -- open an error log
     lopen = open(os.path.join("output", 
-                              "compress_audubon_file_proc{0:02}.log" \
+                              "compress_audubon_file_2_proc{0:02}.log" \
                                   .format(pnum)), "w")
 
     for fname, ftime in zip(fnames_sub, secs_sub):
@@ -110,7 +141,7 @@ def compress_files(times_file):
 
     # -- get the filenames and times
     print("reading file times...")
-    times  = pd.read_csv(times_file)[:100]
+    times  = pd.read_csv(times_file)
     fnames = times.filename.values
     secs   = times.time.values
     
@@ -132,10 +163,10 @@ def compress_files(times_file):
 if __name__=="__main__":
 
     # -- get the file times
-    times_file = "output/cuip_audubon_file_times.csv"
+    times_file = "output/cuip_audubon_file_times_2.csv"
     if not os.path.isfile(times_file):
         print("getting file times...")
-        get_file_times(times_file)
+        get_file_times_fast(times_file)
 
     # -- move files
     compress_files(times_file)
