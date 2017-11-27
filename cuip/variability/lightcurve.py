@@ -7,19 +7,40 @@ import cPickle
 import datetime
 import numpy as np
 import pandas as pd
+import scipy.ndimage.measurements as ndm
 try:
     from plot import *
 except:
     pass
 
 class LightCurves(object):
-    def __init__(self, lpath, vpath, rpath):
+    def __init__(self, lpath, vpath, rpath, bigoffs_path, wins_path):
         """"""
 
-        self.lpath = lpath
-        self.vpath = vpath
-        self.rpath = rpath
-        self.meta = self.metadata(self.rpath)
+        self.lpath = lpath # -- Lightcurves path.
+        self.vpath = vpath # -- Variability path.
+        self.rpath = rpath # -- Registration path.
+        self.meta = self.metadata(self.rpath) # -- Metadata dataframe.
+        self.night = None # -- Night data has been loaded for.
+        self.lightc = None # -- Array of lightcurves for self.night.
+        self.on = None # -- Array of good ons for self.night.
+        self.off = None # -- Array of good offs for self.night.
+        self.bigoffs = None # -- Dictionary of all bigoffs.
+        self.srcs = None # -- Boolean apperture map.
+        self.labs = None # -- Labelled apperture map.
+        self.coords = None # -- Apperture coords.
+
+        # -- Load bigoffs if they have been saved to file.
+        if os.path.isfile(bigoffs_path):
+            self.load_bigoffs(bigoffs_path)
+        else:
+            self.write_bigoffs(bigoffs_path) # Est. Time: 7 mins.lc.
+
+        # -- Load appertures.
+        self.load_wins(wins_path)
+
+        # -- Find apperture centers.
+        self._src_centers()
 
 
     def metadata(self, rpath):
@@ -100,7 +121,7 @@ class LightCurves(object):
 
 
     def loadnight(self, night):
-        """Load a set of lightcurve, ons, and offs.
+        """Load a set of lightcurves, ons, and offs.
         Args:
             night (datetime.date) - night to load data for.
         """
@@ -163,11 +184,36 @@ class LightCurves(object):
         return bigoffs
 
 
+    def _bigoffs_df(self):
+        """"""
+
+        tstart = time.time()
+        print("LIGHTCURVES: Creating bigoffs df...                      ")
+        sys.stdout.flush()
+
+        # -- Create dataframes for each day.
+        dfs = []
+        for ii in self.bigoffs.keys():
+            df = pd.DataFrame.from_dict(self.bigoffs[ii]) \
+                .rename(columns={0: "src", 1: ii.strftime("%D"), 2: "diff"}) \
+                .set_index("src").drop("diff", axis=1)
+            dfs.append(df.T)
+
+        # -- Concatenate all daily dfs.
+        self.bigoffs = pd.concat(dfs)
+        self.bigoffs.index = pd.to_datetime(self.bigoffs.index)
+        self.bigoffs.replace(0., np.nan, inplace=True)
+
+        print("LIGHTCURVES: Complete ({:.2f}s)                               " \
+            .format(time.time() - tstart))
+        sys.stdout.flush()
+
+
     def write_bigoffs(self, outpath):
         """Calculate the bigoff for all nights in the metadata and save the
         resulting dictionary to file.
         Args:
-            output (str) - filepath to save dictionary.
+            output (str) - filepath to save bigoff.
         """
 
         tstart = time.time()
@@ -182,10 +228,12 @@ class LightCurves(object):
             sys.stdout.flush()
             self.bigoffs[dd] = self._find_bigoffs()
 
+        self._bigoffs_df()
+        self.bigoffs.columns = self.bigoffs.columns + 1
+
         print("LIGHTCURVES: Writing bigoffs to file...                        ")
         sys.stdout.flush()
-        with open(outpath, "wb") as outfile:
-            cPickle.dump(self.bigoffs, outfile)
+        self.bigoffs.reset_index().to_pickle(outpath)
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
@@ -195,37 +243,58 @@ class LightCurves(object):
     def load_bigoffs(self, inpath):
         """Load bigoffs .pkl.
         Args:
-            input (str) - filepath to bigoffs dictionary.
+            input (str) - filepath to bigoffs.
         """
+
         tstart = time.time()
         print("LIGHTCURVES: Loading bigoffs from file...                      ")
         sys.stdout.flush()
-        with open(inpath, "rb") as infile:
-            self.bigoffs = cPickle.load(infile)
+        self.bigoffs = pd.read_pickle(inpath).set_index("index")
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
         sys.stdout.flush()
 
 
-    def bigoffs_df(self):
-        """"""
+    def load_wins(self, inpath):
+        """Load apperture map.
+        Args:
+            inpath (str) - filepath to apperture map.
+        """
+
         tstart = time.time()
-        print("LIGHTCURVES: Creating bigoffs df...                      ")
+        print("LIGHTCURVES: Loading appertures from file...                   ")
         sys.stdout.flush()
 
-        # -- Create dataframes for each day.
-        dfs = []
-        for ii in lc.bigoffs.keys():
-            df = pd.DataFrame.from_dict(lc.bigoffs[ii]) \
-                .rename(columns={0: "src", 1: ii.strftime("%D"), 2: "diff"}) \
-                .set_index("src").drop("diff", axis=1)
-            dfs.append(df.T)
+        nrow = 2160
+        ncol = 4096
+        buff = 20
 
-        # -- Concatenate all daily dfs.
-        self.df = pd.concat(dfs)
-        self.df.index = pd.to_datetime(self.df.index)
-        self.df.replace(0., np.nan, inplace=True)
+        self.srcs = np.zeros((nrow, ncol), dtype=bool)
+        self.srcs[buff:-buff, buff:-buff] = np.fromfile(inpath, int) \
+            .reshape(nrow - 2 * buff, ncol - 2 * buff) \
+            .astype(bool)
+        self.labs = ndm.label(self.srcs)[0]
+
+        print("LIGHTCURVES: Complete ({:.2f}s)                               " \
+            .format(time.time() - tstart))
+        sys.stdout.flush()
+
+
+    def _src_centers(self):
+        """Calculated light source centers (dictionary with idx: (xx. yy)."""
+
+        tstart = time.time()
+        print("LIGHTCURVES: Calculating light source centers...               ")
+        sys.stdout.flush()
+
+        # -- List of labels to find center for.
+        labrange = range(1, self.labs.max() + 1)
+        # -- Find center coordinates.
+        xy = ndm.center_of_mass(self.srcs, self.labs, labrange)
+        # -- Create dict of labels: (xx, yy)
+        self.coords = {self.labs[int(coord[0])][int(coord[1])]:
+            (int(coord[1]), int(coord[0])) for coord in xy}
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
@@ -238,21 +307,16 @@ if __name__ == "__main__":
     VARIABILITY = os.environ["VARIABILITY"]
     REGISTRATION = os.environ["REGISTRATION"]
     BIGOFFS = os.environ["BIGOFFS"]
+    WINS = os.environ["WINS"]
 
     # -- Create LightCurve object.
-    lc = LightCurves(LIGHTCURVES, VARIABILITY, REGISTRATION)
-
-    # -- Load bigoffs if they have been saved to file.
-    if os.path.isfile(BIGOFFS):
-        lc.load_bigoffs(BIGOFFS)
-    else:
-        lc.write_bigoffs(BIGOFFS) # Est. Time: 7 mins.
-
-    # -- Create a dataframe of all bigoff times.
-    lc.bigoffs_df()
+    lc = LightCurves(LIGHTCURVES, VARIABILITY, REGISTRATION, BIGOFFS, WINS)
 
     # -- Load a specific night for plotting.
     lc.loadnight(pd.datetime(2013, 11, 4).date())
+
+    # -- Plots.
     plot_lightcurve(lc, 136)
     plot_night(lc)
     plot_winter_summer_bigoffs_boxplot(lc)
+    plot_light_sources(lc)
