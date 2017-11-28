@@ -143,4 +143,25 @@ def plot_light_sources(lc):
 
     plt.gca().invert_yaxis()
     plt.tight_layout()
-    plt.show()
+    plt.show(block=True)
+
+
+def plot_imshow_lightc(lc, show=True):
+    """Plot the LightCurves.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+
+    fig, ax = plt.subplots(figsize=(8, 8))
+    ax.imshow(lc.lightc, cmap="gist_gray")
+    ax.set_ylim(0, lc.lightc.shape[0])
+    ax.set_title("Lightcurve for {} \nNull Sources: {}, Null %: {:.2f}" \
+        .format(lc.night, len(lc.null_src), lc.null_per * 100))
+    ax.set_xlabel("Sources")
+    ax.set_ylabel("Timestep")
+    ax.grid("off")
+    plt.tight_layout()
+    if show:
+        plt.show(block=True)
+    else:
+        plt.savefig("./pdf/lightc_{}.png".format(lc.night))
