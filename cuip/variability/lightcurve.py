@@ -13,38 +13,39 @@ try:
 except:
     pass
 
+
 class LightCurves(object):
-    def __init__(self, lpath, vpath, rpath, bigoffs_path, wins_path, null_path):
+    def __init__(self, lpath, vpath, rpath, spath, outp):
         """"""
 
-        self.lpath = lpath  # -- Lightcurves path.
-        self.vpath = vpath  # -- Variability path.
-        self.rpath = rpath  # -- Registration path.
-        self.meta = None    # -- Metadata dataframe.
-        self.ign_src = None # -- Sources to be ignored on load.
-        self.bigoffs = None # -- Dictionary of all bigoffs.
-        self.night = None   # -- Night data has been loaded for.
-        self.lightc = None  # -- Array of lightcurves for self.night.
-        self.on = None      # -- Array of good ons for self.night.
-        self.off = None     # -- Array of good offs for self.night.
-        self.srcs = None    # -- Boolean apperture map.
-        self.labs = None    # -- Labelled apperture map.
-        self.coords = None  # -- Apperture coords.
+        # -- Data paths.
+        self.lpath = lpath
+        self.vpath = vpath
+        self.rpath = rpath
+        self.spath = spath
+        self.outp = outp
 
         # -- Create metadata df.
-        self._metadata(self.rpath, null_path)
+        self._metadata(self.rpath, os.path.join(self.outp, "null_data.pkl"))
 
         # -- Load bigoffs if they have been saved to file.
-        if os.path.isfile(bigoffs_path):
-            self._load_bigoffs(bigoffs_path)
+        bigo_path = os.path.join(self.outp, "bigoffs.pkl")
+
+        if os.path.isfile(bigo_path):
+            self._load_bigoffs(bigo_path)
         else:
-            self._write_bigoffs(bigoffs_path) # Est. Time: 7 mins.lc.
+            self._write_bigoffs(bigo_path) # Est. Time: 7 mins.lc.
 
         # -- Load appertures.
-        self._load_wins(wins_path)
+        self._load_wins(os.path.join(self.spath, "window_labels.out"))
 
         # -- Find apperture centers.
-        self._src_centers()
+        bbl_path = os.path.join(self.spath, "12_3_14_bblgrid_clean.npy")
+        self._src_centers(bbl_path)
+
+        # -- Create bbl dicts.
+        pluto_mn = os.path.join(self.spath, "pluto", "MN.csv")
+        self._bbl_dicts(bbl_path, pluto_mn)
 
 
     def _metadata(self, rpath, null_path):
@@ -226,8 +227,11 @@ class LightCurves(object):
         sys.stdout.flush()
 
 
-    def _src_centers(self):
-        """Calculated light source centers (dictionary with idx: (xx. yy)."""
+    def _src_centers(self, bbl_path):
+        """Calculated light source centers (dictionary with idx: (xx. yy).
+        Args:
+            bbl_path (str) - path to bbl map.
+        """
 
         tstart = time.time()
         print("LIGHTCURVES: Calculating light source centers...               ")
@@ -240,15 +244,44 @@ class LightCurves(object):
         # -- Create dict of labels: (xx, yy)
         self.coords = {self.labs[int(coord[0])][int(coord[1])]:
             (int(coord[1]), int(coord[0])) for coord in xy}
-        # -- Delete ignored sources.
+
+        # -- Find bbl for each source.
+        bbls = np.load(bbl_path)
+        xx, yy = zip(*self.coords.values())
+        coord_bbls = [bbls[yy[ii] - 20][xx[ii] - 20] for ii in range(len(xx))]
+        self.coord_bbls = dict(zip(self.coords.keys(), coord_bbls))
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
         sys.stdout.flush()
 
 
+    def _bbl_dicts(self, bbl_path, pluto_path):
+        """Create dictionaries required for plotting bbl images."""
+
+        # -- Load bbls, and replace 0s.
+        bbls = np.load(bbl_path)
+        np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
+        # -- Load PLUTO.
+        df = pd.read_csv(pluto_path, usecols=["BBL", "BldgClass"]) \
+            .set_index("BBL")
+        df = df[[isinstance(ii, str) for ii in df.BldgClass]]
+
+        # -- Create dict of BBL:BldgClass
+        self.bbl_class = {bbl: df.loc[bbl].BldgClass for bbl in
+            filter(lambda x: x in df.index, np.unique(bbls))}
+        # -- Create dict of BldgClass:num.
+        uniq_class = np.unique(self.bbl_class.values())
+        self.classn = dict(zip(uniq_class, range(len(uniq_class))))
+        self.classn_r = {v: k for k, v in self.classn.items()}
+        # -- Create dict of BBL:num.
+        self.bbln = dict(zip(self.bbl_class.keys(),
+            [self.classn[v] for v in self.bbl_class.values()]))
+
+
     def _find_err_data(self):
-        """"""
+        """Find sources (indices) that are null and total null percentage for a
+        given night."""
 
         # -- Find sources included in frame.
         # -- Calculate the mean over all sources.
@@ -263,9 +296,6 @@ class LightCurves(object):
 
         self.null_src = null_src
         self.null_per = float(sum(sum(self.lightc == -9999))) / self.lightc.size
-
-        # print("LIGHTCURVES: Night: {}, null_srcs: {}, % null: {:.2f}" \
-        #     .format(self.night, len(self.null_src), self.null_per))
 
 
     def _loadfiles(self, fname, start, end):
@@ -343,19 +373,11 @@ if __name__ == "__main__":
     LIGH = os.environ["LIGHTCURVES"]
     VARI = os.environ["VARIABILITY"]
     REGI = os.environ["REGISTRATION"]
-    BOFF = os.environ["BIGOFFS"]
-    WINS = os.environ["WINS"]
-    NULL = os.environ["NULL"]
-    BBLS = os.environ["BBLS"]
+    SUPP = os.environ["SUPPPATH"]
+    OUTP = os.environ["OUTPATH"]
 
     # -- Create LightCurve object.
-    lc = LightCurves(LIGH, VARI, REGI, BOFF, WINS, NULL)
+    lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
 
     # -- Load a specific night for plotting.
     lc.loadnight(pd.datetime(2014, 7, 29).date())
-
-    # -- Plots.
-    plot_lightcurve(lc, 136)
-    plot_night(lc)
-    plot_winter_summer_bigoffs_boxplot(lc)
-    plot_light_sources(lc)
