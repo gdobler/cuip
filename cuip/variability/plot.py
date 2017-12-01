@@ -2,6 +2,7 @@ from __future__ import print_function
 
 import cPickle
 import numpy as np
+import scipy.stats as stat
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind
 import matplotlib.patches as mpatches
@@ -27,33 +28,40 @@ def read_img(file_path):
     return img
 
 
-def plot_night_img(lc):
+def plot_night_img(lc, show=True, res=False):
     """Plot image of all lightcurves on the loaded evening. Sort by bigoff time
     and overlay bigoff times.
     Args:
         lc (obj) - LightCurve object.
+        show (bool) - Show plot or save.
     """
 
     # -- Get data for the given night.
-    dimg = lc.lightc
+    dimg = lc.src_lightc
     dimg[dimg == -9999.] = np.nan
     dimg = ((dimg - np.nanmin(dimg, axis=0)) /
             (np.nanmax(dimg, axis=0) - np.nanmin(dimg, axis=0)))
     dimg = dimg.T
     offs = lc.bigoffs.loc[lc.night].sort_values()
 
+    if res:
+        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+        offs = offs.loc[res_labs].reset_index(drop=True).sort_values()
+        offs.index = offs.index + 1
+        dimg = dimg[np.array(res_labs) - 1]
+
     # -- Sort dimg by off time.
-    vals = zip(offs.values, offs.index)
-    xx, yy = zip(*vals)
-    dimg = dimg[[yy]]
+    xx, yy = offs.index.astype(int) - 1, offs.values
+    dimg = dimg[[xx]]
 
     # -- Only plot off times > 0.
+    vals = zip(offs.values, offs.index)
     valsf = filter(lambda x: x[0] > 0, vals)
     xx, yy = zip(*valsf)
 
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(dimg, aspect="auto")
-    ax.scatter(xx, np.arange(len(xx)), marker="x", s=4)
+    ax.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
     ax.set_ylim(0, dimg.shape[0])
     ax.set_xlim(0, dimg.shape[1])
     ax.set_title("Light Curves for {}".format(lc.night))
@@ -61,7 +69,11 @@ def plot_night_img(lc):
     ax.set_xlabel("Timesteps")
     ax.grid("off")
     plt.tight_layout()
-    plt.show(block=True)
+
+    if show:
+        plt.show(block=True)
+    else:
+        plt.savefig("./pdf/night_{}.png".format(lc.night))
 
 
 def plot_lightcurve_line(lc, idx):
@@ -73,11 +85,11 @@ def plot_lightcurve_line(lc, idx):
     """
 
     # -- Get data for the given night.
-    dimg = lc.lightc.T
+    dimg = lc.src_lightc.T
     dimg[dimg == -9999.] = np.nan
-    offs = lc.off.T
-    ons = lc.on.T
-    bigoff_ = lc.bigoffs.loc[lc.night].loc[idx]
+    offs = lc.src_offs.T
+    ons = lc.src_ons.T
+    bigoff_ = lc.bigoffs.loc[lc.night].loc[idx + 1]
     bigoff = (bigoff_ if bigoff_ > 0 else None)
 
     fig, ax = plt.subplots(figsize=(9, 3))
@@ -102,36 +114,31 @@ def plot_lightcurve_line(lc, idx):
     plt.show(block=True)
 
 
-def plot_winter_summer_bigoffs_boxplot(lc, median=True, res=True):
+def plot_winter_summer_bigoffs_boxplot(lc, res=True):
     """Plot boxplots comparing bigoffs for summer and winter observations.
     Args:
         lc (obj) - LightCurve object.
-        median (bool) - if true plot median else plot mean.
     """
 
-    if median:
-        winter = lc.bigoffs[lc.bigoffs.index.month > 9]
-        summer = lc.bigoffs[lc.bigoffs.index.month < 9]
-        centralm = "Median"
-    else:
-        winter = lc.bigoffs[lc.bigoffs.index.month > 9]
-        summer = lc.bigoffs[lc.bigoffs.index.month < 9]
-        centralm = "Mean"
+    bidx = lc.bigoffs.index
+    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
+    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
 
     if res:
-        res_labs = filter(lambda x: lc.coords[x][1] > 1020, lc.coords.keys())
+        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+        # res_labs = filter(lambda x: lc.coords[x][1] > 1020, lc.coords.keys())
         winter = winter[res_labs].median(axis=1).dropna()
         summer = summer[res_labs].median(axis=1).dropna()
-        title = "{} {} Bigoff Timestep for Summer and Winter" \
-            .format(centralm, "Residential")
+        title = "Median Weekday {} Bigoff Timestep for Summer and Winter" \
+            .format("Residential")
     else:
         winter = winter.median(axis=1).dropna()
         summer = summer.median(axis=1).dropna()
-        title = "{} Bigoff Timestep for Summer and Winter".format(centralm)
+        title = "Median Weekday Bigoff Timestep for Summer and Winter"
 
     fig, ax = plt.subplots(figsize=(8, 2))
-    ax.boxplot([winter.values, summer.values],
-        vert=False, labels=["Winter", "Summer"], positions=[0, 0.2])
+    ax.boxplot([winter.values, summer.values],vert=False, positions=[0, 0.2],
+        labels=["Winter", "Summer"])
 
     ax.set_ylim(-0.1, 0.3)
     ax.set_xlabel("Timesteps")
@@ -151,12 +158,12 @@ def plot_appertures(lc):
     xx, yy = zip(*map(lambda x: lc.coords[x], lc.coords.keys()))
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(lc.labs)
-    ax.imshow(lc.labs[:1020], cmap="terrain")
+    ax.imshow(lc.mat_labs)
+    ax.imshow(lc.mat_labs[:1020], cmap="terrain")
     ax.scatter(xx, yy, c="r", s=2, marker="x")
 
     ax.set_title("Residential/Commercial Split of Appertures (with Centers)")
-    ax.set_ylim(0, lc.labs.shape[0])
+    ax.set_ylim(0, lc.mat_labs.shape[0])
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
@@ -173,10 +180,10 @@ def plot_imshow_lightc(lc, show=True):
     """
 
     fig, ax = plt.subplots(figsize=(8, 8))
-    ax.imshow(lc.lightc, cmap="gist_gray")
-    ax.set_ylim(0, lc.lightc.shape[0])
+    ax.imshow(lc.src_lightc, cmap="gist_gray")
+    ax.set_ylim(0, lc.src_lightc.shape[0])
     ax.set_title("Lightcurve for {} \nNull Sources: {}, Null %: {:.2f}" \
-        .format(lc.night, len(lc.null_src), lc.null_per * 100))
+        .format(lc.night, len(lc.null_sources), lc.null_percent * 100))
     ax.set_xlabel("Sources")
     ax.set_ylabel("Timestep")
     ax.grid("off")
@@ -187,6 +194,28 @@ def plot_imshow_lightc(lc, show=True):
         plt.savefig("./pdf/lightc_{}.png".format(lc.night))
 
 
+def adjust_img(lc, img_path):
+    """Load img and adjust (roll horizontally and vertically).
+    Args:
+        lc (obj) - LightCurve object.
+        img_path (str) - path to example image.
+    Returns:
+        img (np) - 2d-array of adjusted image.
+    """
+    # -- Find drow and dcol for the example image.
+    spath = img_path.split("/")
+    yyyy, mm, dd = int(spath[5]), int(spath[6]), int(spath[7])
+    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd).date()]["fname"]
+    reg = pd.read_csv(os.path.join(lc.path_regis, "register_{}.csv".format(fnum)))
+    img_reg = reg[reg.fname == os.path.basename(img_path)]
+    drow = img_reg.drow.values.round().astype(int)[0]
+    dcol = img_reg.dcol.values.round().astype(int)[0]
+
+    img = np.roll(read_img(img_path)[20:-20, 20:-20], (drow, dcol), (0, 1))
+
+    return img
+
+
 def plot_bbls(lc, img_path=os.environ["EXAMPLEIMG"]):
     """Plot bbls, example img, and sources.
     Args:
@@ -195,16 +224,7 @@ def plot_bbls(lc, img_path=os.environ["EXAMPLEIMG"]):
     """
 
     # -- Get paths.
-    bbl_path = os.path.join(lc.spath, "12_3_14_bblgrid_clean.npy")
-
-    # -- Find drow and dcol for the example image.
-    spath = img_path.split("/")
-    yyyy, mm, dd = int(spath[5]), int(spath[6]), int(spath[7])
-    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd).date()]["fname"]
-    reg = pd.read_csv(os.path.join(lc.rpath, "register_{}.csv".format(fnum)))
-    img_reg = reg[reg.fname == os.path.basename(img_path)]
-    drow = img_reg.drow.values.round().astype(int)[0]
-    dcol = img_reg.dcol.values.round().astype(int)[0]
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
 
     # -- Load bbls, and replace 0s.
     bbls = np.load(bbl_path)
@@ -212,44 +232,44 @@ def plot_bbls(lc, img_path=os.environ["EXAMPLEIMG"]):
     # -- Convert coords from dict to x and y lists.
     xx, yy = zip(*lc.coords.values())
     # -- Load image without buffer.
-    img = read_img(img_path)[20:-20, 20:-20]
+    img = adjust_img(lc, img_path)
 
     fig, ax = plt.subplots(figsize=(12, 4))
     # -- Plot image, rolling by drow and dcol.
-    ax.imshow(np.roll(img, (drow, dcol), (0, 1)))
+    ax.imshow(img)
     ax.imshow(bbls, alpha=0.3, vmax=1013890001, cmap="flag_r")
     # -- Scatter light source coordinates taking buffer into consideration.
-    uniq = np.unique(lc.coord_bbls.values())
+    uniq = np.unique(lc.coords_bbls.values())
     cmap = dict(zip(uniq, range(len(uniq))))
-    colors = [cmap[key] for key in lc.coord_bbls.values()]
+    colors = [cmap[key] for key in lc.coords_bbls.values()]
     ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", c=colors, s=3,
         cmap="flag_r")
-
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
-    plt.show()
+    plt.show(block=True)
 
 
-def plot_bldgclass(lc):
+def plot_bldgclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
     """Plot PLTUO BldgClass.
     Args:
         lc (obj) - LightCurve object.
     """
 
     # -- Path to bldgclass.np
-    bldgclass_path = os.path.join(lc.outp, "bldgclass.npy")
+    bldgclass_path = os.path.join(lc.path_outpu, "bldgclass.npy")
 
     # -- Load bbls, and replace 0s.
-    bbls = np.load(lc.bbl_path)
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
+    bbls = np.load(bbl_path)
     np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
 
     # -- Map BBL to BldgClass.
     try:
         bldgclass = np.load(bldgclass_path)
-    else:
+    except:
         print("bldgclass.npy does not exist!")
-        bldgclass = np.array([lc.bbln[bbl] if bbl in lc.bbln.keys() else -1
+        bldgclass = np.array([lc.dd_bbl_n[bbl] if bbl in lc.dd_bbl_n.keys() else -1
             for bbl in bbls.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
 
     bldgclass = bldgclass.astype(float)
@@ -257,7 +277,14 @@ def plot_bldgclass(lc):
 
     # -- Plot img.
     fig, ax = plt.subplots(figsize=(16, 8))
-    im = ax.imshow(bldgclass, cmap="tab20b")
+    if bg_img:
+        img = adjust_img(lc, img_path)
+        ax.imshow(img)
+        im = ax.imshow(bldgclass, cmap="tab20b", alpha=0.3)
+        frameon = True
+    else:
+        im = ax.imshow(bldgclass, cmap="tab20b")
+        frameon = False
     ax.set_title("Building Class")
     ax.set_facecolor("w")
     ax.set_xticks([])
@@ -269,56 +296,23 @@ def plot_bldgclass(lc):
     values = values[values < 100]
     colors = [im.cmap(im.norm(value)) for value in values]
     patches = [mpatches.Patch(color=colors[int(i)],
-        label="{}".format(lc.classn_r[int(i)])) for i in values[1:]]
-    plt.legend(handles=patches, ncol=17, prop={"size": 7}, frameon=False)
+        label="{}".format(lc.dd_bldg_n1_r[int(i)])) for i in values[1:]]
+    plt.legend(handles=patches, ncol=17, prop={"size": 7}, frameon=frameon)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=True)
 
 
-def create_arbclass_dict(lc):
-    """Categorize BldgClass numbers.
-    Args:
-        lc (obj) - LightCurve object.
-    """
-
-    arbclass = {}
-    res = ["B", "C", "D", "N", "R1", "R2", "R3", "R4", "S"]
-    com = ["J", "K", "L", "O", "RA", "RB", "RC", "RI"]
-    mix = ["RM", "RR", "RX"]
-    ind = ["F"]
-    mis = ["G", "H", "I", "M", "P", "Q", "T", "U", "V", "W", "Y", "Z"]
-    for cc in lc.classn_r.values():
-        for v in res:
-            if cc.startswith(v):
-                arbclass[cc] = 1
-        for v in com:
-            if cc.startswith(v):
-                arbclass[cc] = 2
-        for v in mix:
-            if cc.startswith(v):
-                arbclass[cc] = 3
-        for v in ind:
-            if cc.startswith(v):
-                arbclass[cc] = 4
-        for v in mis:
-            if cc.startswith(v):
-                arbclass[cc] = 5
-
-    return arbclass
-
-
-def plot_arbclass(lc):
+def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
     """Plot higher level building classification.
     Args:
         lc (obj) - LightCurve object.
     """
 
     # -- Define required paths.
-    bldgclass_path = os.path.join(lc.outp, "bldgclass.npy")
-    arbimg_path = os.path.join(lc.outp, "arbimg.npy")
+    bldgclass_path = os.path.join(lc.path_outpu, "bldgclass.npy")
+    arbimg_path = os.path.join(lc.path_outpu, "arbimg.npy")
 
-    arbclass = create_arbclass_dict(lc)
-    narbclass = {lc.classn[k]: v for k, v in arbclass.items()}
+    narbclass = {lc.dd_bldg_n2[k]: v for k, v in lc.dd_bldg_n2.items()}
     bldgclass = np.load(bldgclass_path)
 
     # -- Map bldgclass to arbclass.
@@ -335,7 +329,22 @@ def plot_arbclass(lc):
 
     # -- Plot img.
     fig, ax = plt.subplots(figsize=(16, 8))
-    im = ax.imshow(arb_img, cmap="tab20b")
+    if bg_img:
+        img = adjust_img(lc, img_path)
+        ax.imshow(img)
+        im = ax.imshow(arb_img, cmap="tab20b", alpha=0.3)
+        frameon=True
+    else:
+        im = ax.imshow(arb_img, cmap="tab20b")
+        frameon=False
+
+    for ii in range(1, 6):
+        iicoords = [lc.coords[idx] for idx in
+        filter(lambda x: lc.coords_cls[x] == ii, lc.coords_cls.keys())]
+        iixx, iiyy = zip(*iicoords)
+        ax.scatter(np.array(iixx)-20, np.array(iiyy)-20, marker="x", s=5)
+        print("LIGHTCURVES: {} class {} sources".format(len(iixx), ii))
+
     ax.set_title("Building Class")
     ax.set_facecolor("w")
     ax.set_xticks([])
@@ -349,6 +358,53 @@ def plot_arbclass(lc):
     colors = [im.cmap(im.norm(value)) for value in values]
     patches = [mpatches.Patch(color=colors[int(i) - 1],
         label="{}".format(labs[int(i) - 1])) for i in values]
-    plt.legend(handles=patches, ncol=17, frameon=False)
+    plt.legend(handles=patches, ncol=17, frameon=frameon)
     plt.tight_layout()
-    plt.show()
+    plt.show(block=True)
+
+
+def plot_winter_summer_hist(lc, res=True):
+    """"""
+
+    bidx = lc.bigoffs.index
+    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
+    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
+
+    if res:
+        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+        winter = winter[res_labs]
+        summer = summer[res_labs]
+
+    wbigoffs = winter.values.ravel()[~np.isnan(winter.values.ravel())]
+    sbigoffs = summer.values.ravel()[~np.isnan(summer.values.ravel())]
+
+    ks_res = stat.ks_2samp(wbigoffs, sbigoffs)
+    resampled_wbig = np.random.choice(wbigoffs, len(sbigoffs), False)
+    en_res = stat.entropy(resampled_wbig, sbigoffs)
+
+    fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(8, 4))
+    ax1.hist(wbigoffs, 31)
+    ax2.hist(sbigoffs, 31)
+
+    ax2.text(0, 0, "Entropy: {}".format(en_res), color="w")
+    ax2.text(0, 100, "KS-test (p-value): {}".format(ks_res.pvalue), color="w")
+
+    ax1.set_title("Winter Bigoffs")
+    for ax in [ax1, ax2]:
+        ax.set_xlabel("Timesteps")
+        ax.set_ylabel("Counts")
+        ax.set_xlim(0, 3000)
+    ax2.set_title("Summer Bigoffs")
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+if __name__ == "__main__":
+    plot_night_img(lc)
+    plot_lightcurve_line(lc, 136)
+    plot_winter_summer_bigoffs_boxplot(lc, res=True)
+    plot_winter_summer_hist(lc)
+    plot_appertures(lc)
+    plot_bbls(lc)
+    plot_bldgclass(lc)
+    plot_arbclass(lc)
