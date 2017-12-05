@@ -1,12 +1,17 @@
 from __future__ import print_function
 
+import re
 import cPickle
 import numpy as np
 import scipy.stats as stat
 import matplotlib.pyplot as plt
 from scipy.stats import ttest_ind
+import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import scipy.ndimage.measurements as ndm
+from sklearn.cluster import KMeans
+from scipy.stats.stats import linregress
+from sklearn.metrics import silhouette_score
 
 plt.style.use("ggplot")
 
@@ -60,7 +65,7 @@ def plot_night_img(lc, show=True, res=False):
     xx, yy = zip(*valsf)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(dimg, aspect="auto")
+    ax.imshow(dimg - dimg.mean(axis=0), aspect="auto")
     ax.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
     ax.set_ylim(0, dimg.shape[0])
     ax.set_xlim(0, dimg.shape[1])
@@ -68,6 +73,65 @@ def plot_night_img(lc, show=True, res=False):
     ax.set_ylabel("Light Sources w Off")
     ax.set_xlabel("Timesteps")
     ax.grid("off")
+    plt.tight_layout()
+
+    if show:
+        plt.show(block=True)
+    else:
+        plt.savefig("./pdf/night_{}.png".format(lc.night))
+
+
+def plot_detrending(lc, show=True, res=False):
+    """Plot results of detrending.
+    Args:
+        lc (obj) - LightCurve object.
+        show (bool) - Show plot or save.
+    """
+
+    # -- Get data for the given night.
+    dimg = lc.src_lightc
+    dimg[dimg == -9999.] = np.nan
+    dimg = ((dimg - np.nanmin(dimg, axis=0)) /
+            (np.nanmax(dimg, axis=0) - np.nanmin(dimg, axis=0)))
+    dimg = dimg.T
+    offs = lc.bigoffs.loc[lc.night].sort_values()
+
+    if res:
+        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+        offs = offs.loc[res_labs].reset_index(drop=True).sort_values()
+        offs.index = offs.index + 1
+        dimg = dimg[np.array(res_labs) - 1]
+
+    # -- Sort dimg by off time.
+    xx, yy = offs.index.astype(int) - 1, offs.values
+    dimg = dimg[[xx]]
+
+    # -- Detrended
+    ddimg = (dimg - dimg.mean(axis=0)).T
+    ddimg = ((ddimg - np.nanmin(ddimg, axis=0)) /
+            (np.nanmax(ddimg, axis=0) - np.nanmin(ddimg, axis=0))).T
+
+    # -- Only plot off times > 0.
+    vals = zip(offs.values, offs.index)
+    valsf = filter(lambda x: x[0] > 0, vals)
+    xx, yy = zip(*valsf)
+
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(12, 12), sharex=True,
+        gridspec_kw={"height_ratios": [2, 1, 2]})
+    ax1.imshow(dimg, aspect="auto")
+    ax1.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
+    ax2.plot(dimg.mean(axis=0))
+    ax3.imshow(ddimg, aspect="auto")
+    ax3.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
+    ax1.set_title("(1) Light Curves for {}, (2) Mean I[arb] Across Sources, (3) Detrended Light Curves" \
+        .format(lc.night))
+    ax2.set_ylabel("Mean I[arb]")
+    ax3.set_xlabel("Timesteps")
+    for ax in [ax1, ax3]:
+        ax.set_ylim(0, dimg.shape[0])
+        ax.set_xlim(0, dimg.shape[1])
+        ax.set_ylabel("Light Sources")
+        ax.grid("off")
     plt.tight_layout()
 
     if show:
@@ -256,21 +320,14 @@ def plot_bldgclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
         lc (obj) - LightCurve object.
     """
 
-    # -- Path to bldgclass.np
-    bldgclass_path = os.path.join(lc.path_outpu, "bldgclass.npy")
-
     # -- Load bbls, and replace 0s.
     bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
     bbls = np.load(bbl_path)
     np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
 
-    # -- Map BBL to BldgClass.
-    try:
-        bldgclass = np.load(bldgclass_path)
-    except:
-        print("bldgclass.npy does not exist!")
-        bldgclass = np.array([lc.dd_bbl_n[bbl] if bbl in lc.dd_bbl_n.keys() else -1
-            for bbl in bbls.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
+    # -- Map bbls to bldgclass number.
+    bldgclass = np.array([lc.dd_bbl_n.get(bbl, -1) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
 
     bldgclass = bldgclass.astype(float)
     bldgclass[bldgclass == -1] = np.nan
@@ -308,21 +365,18 @@ def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
         lc (obj) - LightCurve object.
     """
 
-    # -- Define required paths.
-    bldgclass_path = os.path.join(lc.path_outpu, "bldgclass.npy")
-    arbimg_path = os.path.join(lc.path_outpu, "arbimg.npy")
+    # -- Load bbls, and replace 0s.
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
+    bbls = np.load(bbl_path)
+    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
 
-    narbclass = {lc.dd_bldg_n2[k]: v for k, v in lc.dd_bldg_n2.items()}
-    bldgclass = np.load(bldgclass_path)
+    # -- Map bbls to bldgclass.
+    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
 
-    # -- Map bldgclass to arbclass.
-    try:
-        arb_img = np.load(arbimg_path)
-    except:
-        print("arbimg.py does not exist!!")
-        arb_img = np.array([narbclass[cc] if cc in narbclass.keys() else -1
-            for cc in bldgclass.ravel()]) \
-            .reshape(bldgclass.shape[0], bldgclass.shape[1])
+    # -- Map bldgclass to arbclass num.
+    arb_img = np.array([lc.dd_bldg_n2.get(bldg, -1)
+        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
 
     arb_img = arb_img.astype(float)
     arb_img[arb_img == -1] = np.nan
@@ -367,8 +421,8 @@ def plot_winter_summer_hist(lc, res=True):
     """"""
 
     bidx = lc.bigoffs.index
-    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
-    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
+    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5) & (bidx.isin(lc.nights))]
+    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5) & (bidx.isin(lc.nights))]
 
     if res:
         res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
@@ -386,8 +440,8 @@ def plot_winter_summer_hist(lc, res=True):
     ax1.hist(wbigoffs, 31)
     ax2.hist(sbigoffs, 31)
 
-    ax2.text(0, 0, "Entropy: {}".format(en_res), color="w")
-    ax2.text(0, 100, "KS-test (p-value): {}".format(ks_res.pvalue), color="w")
+    ax1.text(20, 20, "Entropy: {:.4f}".format(en_res), color="w", size=8)
+    ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue), color="w", size=8)
 
     ax1.set_title("Winter Bigoffs")
     for ax in [ax1, ax2]:
@@ -399,6 +453,185 @@ def plot_winter_summer_hist(lc, res=True):
     plt.show(block=True)
 
 
+def plot_cluster_income(lc, nplot=6):
+    """"""
+
+    # -- Load residential income images.
+    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img = np.load(inc_img_path)
+
+    # -- What's a reasonable number of clusters?
+    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
+    vals = np.array(src_inc.values())[[ii > 0 for ii in src_inc.values()]]
+
+    for nclust in range(3, 20):
+        clust = cluster.KMeans(n_clusters=nclust).fit(vals.reshape(-1, 1))
+        scr = silhouette_score(vals.reshape(-1, 1), clust.labels_)
+        print("N Clusters: {}, Silhouette Score: {:.4f}".format(nclust, scr))
+
+    clust = cluster.KMeans(n_clusters=nplot).fit(vals.reshape(-1, 1))
+    fig, ax = plt.subplots(figsize=(12, 2))
+    ax.scatter(vals, np.zeros_like(vals), c=clust.labels_)
+    ax.set_xlabel("Median Household Income")
+    ax.set_yticks([])
+    ax.set_title("Median Household Income Clusters (N: {})".format(nplot))
+    ax.set_xlabel("Median Income")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_income_bigoffs_hist(lc):
+    """"""
+
+    # -- Load residential income images.
+    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img = np.load(inc_img_path)
+
+    # -- Create masks for 0k-50k and >= 50k income sources.
+    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
+    mask_0k30k = [(inc > 1) & (inc < 30000)  for inc in src_inc.values()]
+    mask_30k90k = [(inc >= 30000) & (inc < 90000)  for inc in src_inc.values()]
+    mask_90k = [inc >= 90000 for inc in src_inc.values()]
+
+    # -- Subselect bigoffs by masks.
+    bigoff_0k30k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_0k30k]].values
+    bigoff_30k90k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_30k90k]].values
+    bigoff_90k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_90k]].values
+
+    # -- Select all non-nan values.
+    src_0k30k = bigoff_0k30k.ravel()[~np.isnan(bigoff_0k30k.ravel())]
+    src_30k90k = bigoff_30k90k.ravel()[~np.isnan(bigoff_30k90k.ravel())]
+    src_90k = bigoff_90k.ravel()[~np.isnan(bigoff_90k.ravel())]
+
+    # # -- Statistics.
+    # ks_res = stat.ks_2samp(src_50k, src_0k50k)
+    # resampled_0k50k = np.random.choice(src_0k50k, len(src_50k), False)
+    # en_res = stat.entropy(resampled_0k50k, src_50k)
+
+    # -- Plot
+    fig, [ax1, ax2, ax3] = plt.subplots(1, 3, figsize=(12, 4))
+    ax1.hist(src_0k30k, 31)
+    ax2.hist(src_30k90k, 31)
+    ax3.hist(src_90k, 31)
+
+    # ax1.text(20, 20, "Entropy: {:.4f}".format(en_res), color="w", size=8)
+    # ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue), color="w", size=8)
+
+    for ax in [ax1, ax2, ax3]:
+        ax.set_xlabel("Timesteps")
+        ax.set_ylabel("Counts")
+        ax.set_xlim(0, 3000)
+    ax1.set_title("Median Income < $30,000\nBigoffs", fontsize=12)
+    ax2.set_title("\$30,000 <= Median Income < $90,000\nBigoffs", fontsize=12)
+    ax3.set_title("\$90,000 <= Median Income\nBigoffs", fontsize=12)
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_income_bigoffs_boxplot(lc):
+    """Plot boxplots comparing bigoffs for summer and winter observations.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+
+    # -- Load residential income images.
+    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img = np.load(inc_img_path)
+
+    # -- Create masks for 0k-50k and >= 50k income sources.
+    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
+    src_50k_mask = [inc >= 50000 for inc in src_inc.values()]
+    src_0k50k_mask = [(inc < 50000) & (inc > 1) for inc in src_inc.values()]
+
+    # -- Subselect bigoffs by masks.
+    src_50k_bigoff = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[src_50k_mask]]
+    src_0k50k_bigoff = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[src_0k50k_mask]]
+
+    # -- Plot.
+    fig, ax = plt.subplots(figsize=(8, 2))
+    ax.boxplot([src_50k_bigoff.median(axis=1).dropna().values, src_0k50k_bigoff.median(axis=1).dropna().values],
+        vert=False, positions=[0, 0.2],
+        labels=["Median Income >= $50,000", "Median Income < $50,000"])
+
+    ax.set_ylim(-0.1, 0.3)
+    ax.set_xlabel("Timesteps")
+    ax.set_title("Bigoffs by Median Household Income")
+
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_acs_income(lc, res=True):
+    """"""
+
+    # -- Dictionary of bbls to median household income.
+    income_dict = lc.dd_bb_income
+
+    # -- Load bbls.
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
+    bbls = np.load(bbl_path)
+
+    # -- Map bbls to bldgclass.
+    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
+
+    # -- Map bldgclass to arbclass num.
+    arb_img = np.array([lc.dd_bldg_n2.get(bldg, -1)
+        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
+    arb_img = arb_img.astype(float)
+    arb_img[arb_img == -1] = np.nan
+
+    # -- Map bbl to median income.
+    inc_img = np.array([income_dict.get(bbl, np.nan) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1]).astype(float)
+
+    if res:
+        inc_img = inc_img * (arb_img == 1.0)
+
+    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    np.save(inc_img_path, inc_img)
+
+    arb_img[arb_img == 1.] = np.nan
+    cmap = mcolors.ListedColormap(["silver"] * 4)
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+    cax = ax.imshow(inc_img)
+    ax.imshow(arb_img, cmap=cmap)
+    cbar = fig.colorbar(cax, fraction=0.045, pad=0.02)
+    ax.set_title("Median Household Income for Residential Buildings")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.set_facecolor("w")
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_scatter_bigoffs_income(lc):
+    """"""
+
+    # -- Pull bigoff and income data.
+    cc_inc = {k: lc.dd_bbl_income.get(v, -1) for k, v in lc.coords_bbls.items()}
+    cc_bigoff = lc.bigoffs.loc[lc.nights].median(axis=0).to_dict()
+    inc_bigoff = {v: cc_bigoff.get(k, -1) for k, v in cc_inc.items()}
+    xx, yy = zip(*filter(lambda x: (x[0] > 0) & (x[1] > 0),
+        zip(inc_bigoff.keys(), inc_bigoff.values())))
+
+    # -- Best fit.
+    mm, bb, r2, _, _ = linregress(xx, yy)
+
+    # -- Plot.
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.scatter(xx, yy)
+    ax.plot([0, max(xx) + 10000], [bb, (max(xx) + 10000) * mm + bb])
+    ax.text(1000, 0, "y = {:.5f}x + {:.5f}".format(mm, bb))
+    ax.text(1000, 100, "R2: {:.5f}".format(r2**2))
+    ax.set_xlim(0, max(xx) + 10000)
+    ax.set_xlabel("Median Househould Income")
+    ax.set_ylabel("Median Bigoff Timestep")
+    ax.set_title("Bigoff Timestep v. Household Income For Residential Sources")
+    plt.show()
+
+
 if __name__ == "__main__":
     plot_night_img(lc)
     plot_lightcurve_line(lc, 136)
@@ -408,3 +641,4 @@ if __name__ == "__main__":
     plot_bbls(lc)
     plot_bldgclass(lc)
     plot_arbclass(lc)
+    plot_acs_income(lc)
