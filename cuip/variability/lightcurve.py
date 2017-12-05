@@ -217,6 +217,8 @@ class LightCurves(object):
         # -- Extract null sources to be ignored.
         self.src_ignore = list(set(src for l in null_df.null_sources
             for src in l))
+        # -- Nights where null_percent < 0.25.
+        self.nights = null_df.index.values
 
 
     def _find_err_data(self):
@@ -316,10 +318,12 @@ class LightCurves(object):
         bbls = np.load(bbl_path)
         np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
         # -- Load PLUTO.
-        df = pd.read_csv(pluto_path, usecols=["BBL", "BldgClass"]) \
+        df = pd.read_csv(pluto_path, usecols=["BBL", "BldgClass", "ZipCode"]) \
             .set_index("BBL")
         df = df[[isinstance(ii, str) for ii in df.BldgClass]]
 
+        # -- BBL to zipcode,
+        self.dd_bbl_zip = {int(k): v for k, v in df.ZipCode.to_dict().items()}
         # -- Create dict of BBL:BldgClass
         self.dd_bbl_bldg = {bbl: df.loc[bbl].BldgClass for bbl in
             filter(lambda x: x in df.index, np.unique(bbls))}
@@ -332,6 +336,35 @@ class LightCurves(object):
             [self.dd_bldg_n1[v] for v in self.dd_bbl_bldg.values()]))
         # -- Create dict of BldgClass:
         self._create_arbclass_dict()
+
+        # -- BBL to income dictionary.
+        # -- Load ACS median income data.
+        acs_path = os.path.join(self.path_suppl, "ACS", "ACS_15_5YR_B19013",
+            "ACS_15_5YR_B19013_with_ann.csv")
+        df = pd.read_csv(acs_path, header=1).iloc[:, 2:4]
+        df.columns = ["Geography", "Median_HH_Income"]
+        # -- Pull block group and census tract.
+        df["BG"] = df.Geography.apply(lambda x: x.split(", ")[0].strip("Block Group "))
+        df["CT"] = df.Geography.apply(lambda x: x.split(", ")[1].strip("Census Tract "))
+        df.Median_HH_Income.replace("-", 0, inplace=True)
+        df.Median_HH_Income.replace("250,000+", 250000, inplace=True)
+        df.Median_HH_Income = df.Median_HH_Income.astype(float)
+        df.BG = df.BG.astype(int)
+        df.CT = df.CT.astype(float)
+
+        # -- Load PLUTO data.
+        pluto_path = os.path.join(self.path_suppl, "pluto", "MN.csv")
+        pluto = pd.read_csv(pluto_path, usecols=["Block", "CT2010", "CB2010", "BBL"])
+        pluto.BBL = pluto.BBL.astype(int)
+        # -- Pull block group.
+        pluto.CB2010 = pluto.CB2010.astype(str)
+        pluto["BG"] = pluto.CB2010.str[0].replace("n", np.nan).astype(float)
+
+        # -- Merge ACS median income and PLUTO data.
+        df = pluto.merge(df, left_on=["BG", "CT2010"], right_on=["BG", "CT"], how="left")
+        # -- BBL to median income dict:
+        self.dd_bbl_income = df[["BBL", "Median_HH_Income"]].set_index("BBL") \
+            .to_dict()["Median_HH_Income"]
 
 
     def _create_arbclass_dict(self):
