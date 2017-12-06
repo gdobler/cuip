@@ -81,7 +81,7 @@ def plot_night_img(lc, show=True, res=False):
         plt.savefig("./pdf/night_{}.png".format(lc.night))
 
 
-def plot_detrending(lc, show=True, res=False):
+def plot_detrending(lc, show=True, res=False, detrend="Median"):
     """Plot results of detrending.
     Args:
         lc (obj) - LightCurve object.
@@ -107,7 +107,12 @@ def plot_detrending(lc, show=True, res=False):
     dimg = dimg[[xx]]
 
     # -- Detrended
-    ddimg = (dimg - dimg.mean(axis=0)).T
+    if detrend == "Median":
+        dtrend = np.median(dimg, axis=0)
+    elif detrend == "Mean":
+        dtrend = dimg.mean(axis=0)
+
+    ddimg = (dimg - dtrend).T
     ddimg = ((ddimg - np.nanmin(ddimg, axis=0)) /
             (np.nanmax(ddimg, axis=0) - np.nanmin(ddimg, axis=0))).T
 
@@ -120,12 +125,12 @@ def plot_detrending(lc, show=True, res=False):
         gridspec_kw={"height_ratios": [2, 1, 2]})
     ax1.imshow(dimg, aspect="auto")
     ax1.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
-    ax2.plot(dimg.mean(axis=0))
+    ax2.plot(dtrend)
     ax3.imshow(ddimg, aspect="auto")
     ax3.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
-    ax1.set_title("(1) Light Curves for {}, (2) Mean I[arb] Across Sources, (3) Detrended Light Curves" \
-        .format(lc.night))
-    ax2.set_ylabel("Mean I[arb]")
+    ax1.set_title("(1) Light Curves for {}, (2) {} I[arb] Across Sources, (3) Detrended Light Curves" \
+        .format(lc.night, detrend))
+    ax2.set_ylabel("{} I[arb]".format(detrend))
     ax3.set_xlabel("Timesteps")
     for ax in [ax1, ax3]:
         ax.set_ylim(0, dimg.shape[0])
@@ -629,6 +634,62 @@ def plot_scatter_bigoffs_income(lc):
     ax.set_xlabel("Median Househould Income")
     ax.set_ylabel("Median Bigoff Timestep")
     ax.set_title("Bigoff Timestep v. Household Income For Residential Sources")
+    plt.show()
+
+
+def plot_arbclass_timeseries(lc, subsample="Percent", N=0.5, alpha=0.6):
+    """"""
+
+    # -- Use detrended min-maxed lightcurves.
+    dimg = lc.src_lightc
+    dimg[dimg == -9999.] = np.nan
+    dimg = ((dimg - np.nanmin(dimg, axis=0)) /
+            (np.nanmax(dimg, axis=0) - np.nanmin(dimg, axis=0)))
+
+    # -- Pull source indices for all higher level classifications.
+    res, _ = zip(*filter(lambda x: x[1] == 1, lc.coords_cls.items()))
+    com, _ = zip(*filter(lambda x: x[1] == 2, lc.coords_cls.items()))
+    mix, _ = zip(*filter(lambda x: x[1] == 3, lc.coords_cls.items()))
+    ind, _ = zip(*filter(lambda x: x[1] == 4, lc.coords_cls.items()))
+    mis, _ = zip(*filter(lambda x: x[1] == 5, lc.coords_cls.items()))
+
+    if subsample == "Percent":
+        res = np.random.choice(res, size=int(len(res) * N), replace=False)
+        com = np.random.choice(com, size=int(len(com) * N), replace=False)
+        mix = np.random.choice(mix, size=int(len(mix) * N), replace=False)
+        # ind = np.random.choice(ind, size=int(len(ind) * N), replace=False)
+        mis = np.random.choice(mis, size=int(len(mis) * N), replace=False)
+    if subsample == "Number":
+        res = np.random.choice(res, size=int(N), replace=False)
+        com = np.random.choice(com, size=int(N), replace=False)
+        mix = np.random.choice(mix, size=int(N), replace=False)
+        # ind = np.random.choice(ind, size=int(N), replace=False)
+        mis = np.random.choice(mis, size=int(N), replace=False)
+
+    res_ts = dimg[:, np.array(res) - 1].mean(axis=1)
+    com_ts = dimg[:, np.array(com) - 1].mean(axis=1)
+    mix_ts = dimg[:, np.array(mix) - 1].mean(axis=1)
+    # ind_ts = dimg[:, np.array(ind) - 1].mean(axis=1)
+    mis_ts = dimg[:, np.array(mis) - 1].mean(axis=1)
+
+    idx = list(res) + list(com) + list(mix) + list(mis)
+    mean_ts = dimg[:, np.array(idx) - 1].mean(axis=1)
+
+    # -- Plot.
+    aa = 0.6
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(res_ts - mean_ts, alpha=aa, label="Residential (N: {})".format(len(res)))
+    ax.plot(com_ts - mean_ts, alpha=aa, label="Commercial (N: {})".format(len(com)))
+    ax.plot(mix_ts - mean_ts, alpha=aa, label="Mixed Use (N: {})".format(len(mix)))
+    # ax.plot(ind_ts - mean_ts, label="Ind.") # 1 Src...
+    ax.plot(mis_ts - mean_ts, alpha=aa, label="Misc. (N: {})".format(len(mix)))
+    ax.set_xlim(0, dimg.shape[0])
+    ax.set_xlabel("Timesteps")
+    ax.set_yticklabels([])
+    ax.set_ylabel("Mean I[arb](BuildingClass)  - Mean I[arb]")
+    ax.set_title("Diff. in Mean Lightcurve by Building Class. from Night Mean ({})" \
+        .format(lc.night))
+    ax.legend()
     plt.show()
 
 
