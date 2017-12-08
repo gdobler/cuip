@@ -12,6 +12,7 @@ try:
     from plot import *
 except:
     pass
+from collections import defaultdict
 
 
 class LightCurves(object):
@@ -52,7 +53,7 @@ class LightCurves(object):
             self._write_bigoffs(path_bigoff) # Est. Time: 7 mins.lc.
 
 
-    def _metadata(self, rpath):
+    def _metadata(self, rpath, opath):
         """Load all registration files and concatenate to pandas df. Find
         indices for every day in corresponding on/off/lightcurve files.
         Args:
@@ -86,8 +87,9 @@ class LightCurves(object):
             meta["timesteps"] = meta.end - meta.start
             dfs.append(meta)
 
-        # -- Concatenate metadata dataframe, only keeping days with < 25% null.
-        self.meta = pd.concat(dfs)#.loc[tmp.index]
+        # -- Concatenate metadata dataframe.
+        self.meta = pd.concat(dfs)
+        tmp = pd.read_pickle
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
@@ -219,6 +221,8 @@ class LightCurves(object):
             for src in l))
         # -- Nights where null_percent < 0.25.
         self.nights = null_df.index.values
+        # -- Merge null_percent with meta df.
+        self.meta = self.meta.merge(null_df[["null_percet"]], left_index=True, right_index=True)
 
 
     def _find_err_data(self):
@@ -305,6 +309,14 @@ class LightCurves(object):
         bbl_arb = {k: self.dd_bldg_n2[v] for k, v in self.dd_bbl_bldg.items()}
         ccs = filter(lambda x: x[1] in bbl_arb.keys(), self.coords_bbls.items())
         self.coords_cls = {k: bbl_arb[v] for k, v in ccs}
+
+        # -- Create dict for bbl to 2nd level class:
+        self.dd_bbl_bldg2 = {bbl: self.coords_cls.get(src, -1)
+            for src, bbl in self.coords_bbls.items()}
+
+        # -- Create dict for bbl: list of sources.
+        self.dd_bbl_srcs = defaultdict(list)
+        _ = [self.dd_bbl_srcs[v].append(k) for k, v in self.coords_bbls.items()]
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
@@ -484,4 +496,4 @@ if __name__ == "__main__":
     lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
 
     # -- Load a specific night for plotting.
-    lc.loadnight(pd.datetime(2014, 7, 13).date())
+    lc.loadnight(pd.datetime(2013, 11, 15).date())
