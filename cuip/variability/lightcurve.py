@@ -53,7 +53,7 @@ class LightCurves(object):
             self._write_bigoffs(path_bigoff) # Est. Time: 7 mins.lc.
 
 
-    def _metadata(self, rpath, opath):
+    def _metadata(self, rpath):
         """Load all registration files and concatenate to pandas df. Find
         indices for every day in corresponding on/off/lightcurve files.
         Args:
@@ -74,7 +74,7 @@ class LightCurves(object):
             # -- Subselect for times fromm 9PM - 5AM.
             hours = reg.timestamp.dt.hour
             reg = reg[(hours > 20) | (hours < 12)].reset_index()
-            # -- Shift data so each continuours night shares a common date.
+            # -- Shift data so each continuous night shares a common date.
             reg.timestamp = reg.timestamp - datetime.timedelta(0, 6 * 3600)
             # -- Find min and max idx for each day.
             grpby = reg.groupby(reg.timestamp.dt.date)["index"]
@@ -88,8 +88,7 @@ class LightCurves(object):
             dfs.append(meta)
 
         # -- Concatenate metadata dataframe.
-        self.meta = pd.concat(dfs)
-        tmp = pd.read_pickle
+        self.meta = pd.concat(dfs).drop_duplicates()
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
@@ -204,7 +203,7 @@ class LightCurves(object):
             sys.stdout.flush()
 
             dd_ign = []
-            for dd, row in self.meta.iterrows():
+            for dd in self.meta.index.unique():
                 self.loadnight(dd)
                 dd_ign.append([dd, self.null_sources, self.null_percent])
             null_df = pd.DataFrame(dd_ign, columns=cols).set_index("dd")
@@ -215,14 +214,16 @@ class LightCurves(object):
             sys.stdout.flush()
 
         # -- Entirely ignore all days with more than 25% null data.
-        null_df = null_df[null_df.null_percent < 0.25]
+        null_df25 = null_df[null_df.null_percent < 0.25]
         # -- Extract null sources to be ignored.
-        self.src_ignore = list(set(src for l in null_df.null_sources
+        self.src_ignore = list(set(src for l in null_df25.null_sources
             for src in l))
         # -- Nights where null_percent < 0.25.
-        self.nights = null_df.index.values
-        # -- Merge null_percent with meta df.
-        self.meta = self.meta.merge(null_df[["null_percet"]], left_index=True, right_index=True)
+        self.nights = null_df25.index.values
+        self.null_df = null_df
+        # # -- Merge null_percent with meta df.
+        self.meta = self.meta.merge(null_df[["null_percent"]], left_index=True,
+            right_index=True, how="left", validate="many_to_one")
 
 
     def _find_err_data(self):
