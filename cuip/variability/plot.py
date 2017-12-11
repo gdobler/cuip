@@ -693,6 +693,113 @@ def plot_arbclass_timeseries(lc, subsample="Percent", N=0.5, alpha=0.6):
     plt.show()
 
 
+def plot_src_lightcurves(lc, data, start_idx, end_idx):
+    """Successively plot lightcurves for each source between start_idx and
+    end_idx from datacube.
+    Args:
+        lc (obj) - LightCurves object.
+        data (array) - Lightcurves data cube.
+        start_idx (int) - sources idx to start plotting.
+        end_idx (int) - sources idx to end plotting.
+    """
+
+    for ii in range(start_idx, end_idx):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        ax.imshow(data[:, ii, :].T, aspect="auto")
+        ax.set_title("Lightcurves For Source {} (BBL: {}, Cls: {})" \
+            .format(ii, lc.coords_bbls[ii + 1], lc.coords_cls[ii + 1]))
+        ax.set_yticks(range(len(ndates)))
+        ax.set_yticklabels(ndates)
+        ax.set_ylabel("Nights")
+        ax.set_xlabel("Timesteps")
+        plt.show(block=True)
+
+
+def plot_datacube_curves(data, class_sources, night=0):
+    """"""
+
+    res, com, mix, mis = class_sources
+    fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(12, 12))
+
+    for foo in data[:, res - 1, 1].T:
+        ax1.plot(foo, c="k", alpha=0.01)
+    for foo in data[:, com - 1, 1].T:
+        ax2.plot(foo, c="k", alpha=0.01)
+    for foo in data[:, mix - 1, 1].T:
+        ax3.plot(foo, c="k", alpha=0.01)
+    for foo in data[:, mis - 1, 1].T:
+        ax4.plot(foo, c="k", alpha=0.01)
+
+    ax1.set_title("Residential Sources")
+    ax2.set_title("Commercial Sources")
+    ax3.set_title("Mixed Sources")
+    ax4.set_title("Misc. Sources")
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.set_xlabel("Timesteps")
+        ax.set_ylabel("Intensity [Arb Units]")
+        ax.set_yticks([])
+        ax.set_ylim(0, 1)
+        ax.set_xlim(0, 2876)
+    plt.tight_layout(pad=2, h_pad=4)
+    plt.show()
+
+
+def plot_srcs_centrality_by_cls(data, class_sources, central="mean"):
+    """"""
+
+    res, com, mix, mis = class_sources
+    fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(12, 12))
+
+    if central == "mean":
+        for foo in data[:, res - 1, :].mean(axis=2).T:
+            ax1.plot(foo, c="k", alpha=0.02)
+        for foo in data[:, com - 1, :].mean(axis=2).T:
+            ax2.plot(foo, c="k", alpha=0.02)
+        for foo in data[:, mix - 1, :].mean(axis=2).T:
+            ax3.plot(foo, c="k", alpha=0.02)
+        for foo in data[:, mis - 1, :].mean(axis=2).T:
+            ax4.plot(foo, c="k", alpha=0.02)
+
+    elif central == "median":
+        for foo in np.median(data[:, res - 1, :], axis=2).T:
+            ax1.plot(foo, c="k", alpha=0.02)
+        for foo in np.median(data[:, com - 1, :], axis=2).T:
+            ax2.plot(foo, c="k", alpha=0.02)
+        for foo in np.median(data[:, mix - 1, :], axis=2).T:
+            ax3.plot(foo, c="k", alpha=0.02)
+        for foo in np.median(data[:, mis - 1, :], axis=2).T:
+            ax4.plot(foo, c="k", alpha=0.02)
+
+    elif central == "std":
+        for foo in np.std(data[:, res - 1, :], axis=2).T:
+            ax1.plot(foo, c="k", alpha=0.02)
+        for foo in np.std(data[:, com - 1, :], axis=2).T:
+            ax2.plot(foo, c="k", alpha=0.02)
+        for foo in np.std(data[:, mix - 1, :], axis=2).T:
+            ax3.plot(foo, c="k", alpha=0.02)
+        for foo in np.std(data[:, mis - 1, :], axis=2).T:
+            ax4.plot(foo, c="k", alpha=0.02)
+
+    else:
+        raise("{} is not a valid central measure".format(central))
+
+    ax1.set_title("Residential Sources")
+    ax2.set_title("Commercial Sources")
+    ax3.set_title("Mixed Sources")
+    ax4.set_title("Misc. Sources")
+    for ax in [ax1, ax2, ax3, ax4]:
+        ax.set_xlabel("Timesteps")
+        ax.set_ylabel("Intensity [Arb Units]")
+        ax.set_yticks([])
+        if central == "std":
+            ax.set_ylim(0, 0.5)
+        else:
+            ax.set_ylim(0, 1)
+        ax.set_xlim(0, 2876)
+    plt.tight_layout(pad=2, h_pad=4)
+    plt.show()
+
+
 if __name__ == "__main__":
     plot_night_img(lc)
     plot_lightcurve_line(lc, 136)
