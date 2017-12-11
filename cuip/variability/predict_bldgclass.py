@@ -2,60 +2,137 @@ from __future__ import print_function
 
 import numpy as np
 import pandas as pd
-from fastdtw import fastdtw
+# from fastdtw import fastdtw
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import silhouette_score, confusion_matrix
 from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
-from tsfresh import extract_features
-from tsfresh.feature_extraction.settings import EfficientFCParameters
+# from tsfresh import extract_features
+# from tsfresh.feature_extraction.settings import EfficientFCParameters
 
 
-def stack_nights():
-    """"""
+def stack_nights(lc):
+    """Load complete lightcurve data for weeknights. De-trend, filter noise,
+    and min max each lightcurve.
+    Args:
+        lc (obj) - LightCurve object.
+    Returns:
+        data (array) - data cube.
+    """
 
-    # -- Sample of good nights (clean data collection).
-    nday = [4, 5, 8, 15, 20, 21, 25]
-    ndates = [pd.datetime(2013, 11, day).date() for day in nday]
+    holidates = [pd.datetime(2013, 12, 25).date(),
+                 pd.datetime(2013, 12, 26).date()]
+    meta_gb = lc.meta.groupby(lc.meta.index).mean()
+    ndates = meta_gb[(meta_gb.null_percent < 0.05) &
+                     (meta_gb.timesteps > 2875) &
+                     ([ii.weekday() < 5 for ii in meta_gb.index]) &
+                     ([ii not in holidates for ii in meta_gb.index])].index
+
+    rel_bigoffs = lc.bigoffs.loc[ndates] > 0
 
     data = []
     # -- Stack multiple nights.
     for date in ndates:
         lc.loadnight(date)
         # -- Pull nightly lightcurves for same range of timesteps.
-        lightc = lc.src_lightc[:2878, :]
+        lightc = pd.DataFrame(lc.src_lightc[:2876, :])
+        lightc.columns = np.array(lightc.columns) + 1
+        # -- Select lightcurves with a bigoff.
+        bidx = [idx for idx, val in rel_bigoffs.loc[lc.night].items() if val == True]
+        lightc = lightc.loc[:, np.array(bidx)]
         # -- Detrend (i.e., subtract the median).
         dlightc = (lightc.T - np.median(lightc, axis=1)).T
+        # -- Filter noise.
+        dlightc_gauss = pd.DataFrame(gaussian_filter(dlightc.T, [0, 10])).T
+        dlightc_gauss.columns = dlightc.columns
         # -- Min max each source, and append lightcurve array to data.
-        data.append(MinMaxScaler().fit_transform(dlightc))
+        data.append(MinMaxScaler().fit_transform(dlightc_gauss.T).T)
+
     data = np.array(data).T
-    # -- Take the mean of each source over all nights and min max the result.
-    mean_gaus = gaussian_filter(data.mean(axis=2), [0, 10])
-    mean_gaus_mm = MinMaxScaler().fit_transform(mean_gaus.T).T
 
-    # -- Pull source indices for higher level classifications (excl. indust).
-    idxs = [zip(*filter(lambda x: x[1] == ii, lc.coords_cls.items()))[0]
-        for ii in [1, 2]]
-
-    # -- Select class timeseries, take the mean, and min max.
-    ts_bldg = [mean_gaus[np.array(idx) - 1].mean(axis=0) for idx in idxs]
-    ts_mm = [MinMaxScaler().fit_transform(ts.reshape(-1, 1)) for ts in ts_bldg]
-
-    # -- Plot filter timeseries for each class and some example timeseries.
-    for ts, lab in zip(ts_mm, ["Res", "Com"]):
-        plt.plot(ts, label=lab, lw=2)
-    for ii in idxs[0][:5]:
-        plt.plot(mean_over_nights_gaus[ii], c="r", ls="dashed", lw=0.5)
-    for ii in idxs[1][:5]:
-        plt.plot(mean_over_nights_gaus[ii], c="b", ls="dashed", lw=0.5)
-    plt.legend(loc=1)
-    plt.show()
-
-    return [mean_gaus_mm, ts_mm, mean_over_nights_gaus, idxs]
+    return [data, rel_bigoffs]
 
 
+def split_bbls_left_right(lc, training_size):
+    """"""
+
+    # -- Get the centroid for all of bbls sources.
+    src_bbls = pd.DataFrame.from_dict(lc.coords_bbls, orient="index") \
+        .rename(columns={0: "bbls"})
+    src_coords = pd.DataFrame.from_dict(lc.coords, orient="index") \
+        .rename(columns={0: "x", 1: "y"})
+    bbl_coords = src_bbls.merge(src_coords, left_index=True, right_index=True) \
+        .groupby(["bbls"]).median()
+
+    # -- Split bbls into left and right, based on the centroid.
+    splitv = int(4096 * training_size)
+    lbbls = bbl_coords[bbl_coords.x <= splitv].index
+    rbbls = bbl_coords[bbl_coords.x > splitv].index
+
+    # -- Get sources corresponding to left and right bbl split.
+    lsrcs = np.concatenate([lc.dd_bbl_srcs[bbl] for bbl in lbbls]).ravel()
+    rsrcs = np.concatenate([lc.dd_bbl_srcs[bbl] for bbl in rbbls]).ravel()
+
+    # -- Create dict of {key: class} for each left right split.
+    keys = lc.coords_cls.keys()
+    lclass = {key: lc.coords_cls[key] for key in lsrcs if key in keys}
+    rclass = {key: lc.coords_cls[key] for key in rsrcs if key in keys}
+
+    # -- How many Res v. Non Res in each set.
+    lres = sum(np.array(lclass.values()) == 1)
+    lnonres = sum(np.array(lclass.values()) > 1)
+    rres = sum(np.array(rclass.values()) == 1)
+    rnonres = sum(np.array(rclass.values()) > 1)
+    print("LIGHTCURVES: Left  -- Res {}, NonRes {}                           " \
+        .format(lres, lnonres))
+    print("LIGHTCURVES: Right -- Res {}, NonRes {}                           " \
+        .format(rres, rnonres))
+
+    return [lclass, rclass]
+
+
+def class_sources(lc):
+    """"""
+
+    res = np.array([pair[0] for pair in lc.coords_cls.items() if pair[1] == 1])
+    com = np.array([pair[0] for pair in lc.coords_cls.items() if pair[1] == 2])
+    mix = np.array([pair[0] for pair in lc.coords_cls.items() if pair[1] == 3])
+    mis = np.array([pair[0] for pair in lc.coords_cls.items() if pair[1] == 5])
+
+    return [res, com, mix, mis]
+
+
+
+def train_test_datacube(data, lclass, rclass):
+    """"""
+
+    # -- Select all sources for training/testing.
+    test = data[:, np.array(rclass.keys()) - 1, :]
+    train = data[:, np.array(lclass.keys()) - 1, :]
+
+    # -- Reshape into 2d array.
+    test_data = np.vstack(test.T)
+    train_data = np.vstack(train.T)
+
+    # -- Reshape labels.
+    test_labels = (np.array(rclass.values() * data.shape[-1]).ravel() == 1).astype(int)
+    train_labels = (np.array(lclass.values() * data.shape[-1]).ravel() == 1).astype(int)
+
+    return [train_data, train_labels, test_data, test_labels]
+
+
+def dumb_classifier():
+    # -- Predict buildings as residential or non-residential.
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0,
+        class_weight="balanced")
+    clf.fit(train_data, train_labels)
+    testpred = clf.predict(test_data)
+    print(confusion_matrix(test_labels, testpred))
+
+
+# -- CODE HAS BEEN REVISED...
 def dtw_cluster(mean_gaus_mm, ts_mm):
     """"""
     Ntest = len(mean_gaus_mm)
