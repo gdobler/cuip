@@ -279,13 +279,17 @@ def adjust_img(lc, img_path):
     img_reg = reg[reg.fname == os.path.basename(img_path)]
     drow = img_reg.drow.values.round().astype(int)[0]
     dcol = img_reg.dcol.values.round().astype(int)[0]
+    print("LIGHTCURVES: drow {}                                              " \
+        .format(drow))
+    print("LIGHTCURVES: dcol {}                                              " \
+        .format(dcol))
 
     img = np.roll(read_img(img_path)[20:-20, 20:-20], (drow, dcol), (0, 1))
 
     return img
 
 
-def plot_bbls(lc, img_path=os.environ["EXAMPLEIMG"]):
+def plot_bbls(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
     """Plot bbls, example img, and sources.
     Args:
         lc (obj) - LightCurve object.
@@ -300,12 +304,13 @@ def plot_bbls(lc, img_path=os.environ["EXAMPLEIMG"]):
     np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
     # -- Convert coords from dict to x and y lists.
     xx, yy = zip(*lc.coords.values())
-    # -- Load image without buffer.
-    img = adjust_img(lc, img_path)
 
     fig, ax = plt.subplots(figsize=(12, 4))
-    # -- Plot image, rolling by drow and dcol.
-    ax.imshow(img)
+    if bg_img:
+        # -- Plot image, rolling by drow and dcol.
+        # -- Load image without buffer.
+        img = adjust_img(lc, img_path)
+        ax.imshow(img)
     ax.imshow(bbls, alpha=0.3, vmax=1013890001, cmap="flag_r")
     # -- Scatter light source coordinates taking buffer into consideration.
     uniq = np.unique(lc.coords_bbls.values())
@@ -404,6 +409,9 @@ def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
         ax.scatter(np.array(iixx)-20, np.array(iiyy)-20, marker="x", s=5)
         print("LIGHTCURVES: {} class {} sources".format(len(iixx), ii))
 
+    ax.axhline(1050)
+    ax.axhline(850)
+
     ax.set_title("Building Class")
     ax.set_facecolor("w")
     ax.set_xticks([])
@@ -415,6 +423,54 @@ def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
     values = np.unique(arb_img)
     values = values[values > 0]
     colors = [im.cmap(im.norm(value)) for value in values]
+    patches = [mpatches.Patch(color=colors[int(i) - 1],
+        label="{}".format(labs[int(i) - 1])) for i in values]
+    plt.legend(handles=patches, ncol=17, frameon=frameon)
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_specific_bbls(bbl_list, lc, bg_img=False):
+    """"""
+
+    # -- Load bbls, and replace 0s.
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
+    bbls = np.load(bbl_path)
+    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
+
+    # -- Only select relevant bbls.
+    np.place(bbls, ~np.isin(bbls, center_bbls), -1)
+
+    # -- Map bbls to bldgclass.
+    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
+
+    # -- Map bldgclass to arbclass num.
+    arb_img = np.array([lc.dd_bldg_n2.get(bldg, np.nan)
+        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
+
+    # -- Plot img.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if bg_img:
+        img = adjust_img(lc, img_path)
+        ax.imshow(img)
+        im = ax.imshow(arb_img, cmap="tab20b", alpha=0.3)
+        frameon=True
+    else:
+        im = ax.imshow(arb_img, cmap="tab20b")
+        frameon=False
+
+    ax.set_title("Building Class")
+    ax.set_facecolor("w")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid("off")
+
+    # -- Create legend.
+    labs = ["Residential", "Commmercial", "Mixed Use", "Industrial", "Misc."]
+    values = np.unique(arb_img)
+    values = values[values > 0]
+    colors = [im.cmap(im.norm(value)) for value in range(len(labs))]
     patches = [mpatches.Patch(color=colors[int(i) - 1],
         label="{}".format(labs[int(i) - 1])) for i in values]
     plt.legend(handles=patches, ncol=17, frameon=frameon)
@@ -800,13 +856,64 @@ def plot_srcs_centrality_by_cls(data, class_sources, central="mean"):
     plt.show()
 
 
-if __name__ == "__main__":
-    plot_night_img(lc)
-    plot_lightcurve_line(lc, 136)
-    plot_winter_summer_bigoffs_boxplot(lc, res=True)
-    plot_winter_summer_hist(lc)
-    plot_appertures(lc)
-    plot_bbls(lc)
-    plot_bldgclass(lc)
-    plot_arbclass(lc)
-    plot_acs_income(lc)
+def plot_correct_predictions(lc, pred_df, lclass, rclass, bg_img=False,
+    img_path=os.environ["EXAMPLEIMG"]):
+    """Correct/incorrect predictions.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+
+    # -- Load bbls, and replace 0s.
+    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
+    bbls = np.load(bbl_path)
+    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
+
+    # -- Create dict of bbls:left/right.
+    keys = {lc.coords_bbls[k]: 0 for k, v in lclass.items()}
+    keys.update({lc.coords_bbls[k]: 1 for k, v in rclass.items()})
+
+    # -- Map bbls to left right.
+    leftright = np.array([keys.get(bbl, -1) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
+    leftright = leftright.astype(float)
+    leftright[leftright == -1] = np.nan
+
+    # -- Create bbl:correct dict.
+    pred_correct = pred_df["correct"].to_dict()
+
+    # -- Map to correct predictions.
+    correct_preds = np.array([pred_correct.get(bbl, np.nan) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1])
+
+    # -- Plot img.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if bg_img:
+        img = adjust_img(lc, img_path)
+        ax.imshow(img)
+        im = ax.imshow(correct_preds, cmap="cool", alpha=0.3)
+        frameon=True
+    else:
+        im = ax.imshow(correct_preds, cmap="cool")
+        frameon=False
+
+    ax.set_title("Building Level Prediction (50% Cutoffs)")
+    ax.set_facecolor("w")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid("off")
+
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+
+# if __name__ == "__main__":
+#     plot_night_img(lc)
+#     plot_lightcurve_line(lc, 136)
+#     plot_winter_summer_bigoffs_boxplot(lc, res=True)
+#     plot_winter_summer_hist(lc)
+#     plot_appertures(lc)
+#     plot_bbls(lc)
+#     plot_bldgclass(lc)
+#     plot_arbclass(lc)
+#     plot_acs_income(lc)
