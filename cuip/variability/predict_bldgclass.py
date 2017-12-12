@@ -4,16 +4,17 @@ import numpy as np
 import pandas as pd
 # from fastdtw import fastdtw
 from sklearn.cluster import KMeans
+from sklearn.externals import joblib
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import silhouette_score, confusion_matrix
 from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
-# from tsfresh import extract_features
-# from tsfresh.feature_extraction.settings import EfficientFCParameters
+from tsfresh import extract_features
+from tsfresh.feature_extraction.settings import EfficientFCParameters
 
 
-def stack_nights(lc):
+def stack_nights_np(lc):
     """Load complete lightcurve data for weeknights. De-trend, filter noise,
     and min max each lightcurve.
     Args:
@@ -24,6 +25,37 @@ def stack_nights(lc):
 
     holidates = [pd.datetime(2013, 12, 25).date(),
                  pd.datetime(2013, 12, 26).date()]
+    meta_gb = lc.meta.groupby(lc.meta.index).mean()
+    ndates = meta_gb[(meta_gb.null_percent < 0.05) &
+                     (meta_gb.timesteps > 2875) &
+                     ([ii.weekday() < 5 for ii in meta_gb.index]) &
+                     ([ii not in holidates for ii in meta_gb.index])].index
+
+    data = []
+    # -- Stack multiple nights.
+    for date in ndates:
+        lc.loadnight(date)
+        # -- Pull nightly lightcurves for same range of timesteps.
+        lightc = lc.src_lightc[:2876, :]
+        # -- Detrend (i.e., subtract the median).
+        dlightc = (lightc.T - np.median(lightc, axis=1)).T
+        # -- Filter noise.
+        dlightc_gauss = gaussian_filter(dlightc.T, [0, 10])
+        # -- Min max each source, and append lightcurve array to data.
+        data.append(MinMaxScaler().fit_transform(dlightc_gauss.T).T)
+
+    data = np.array(data).T
+
+    return [data, rel_bigoffs]
+
+
+def stack_nights_df(lc):
+    """"""
+
+    holidates = [pd.datetime(2013, 12, 25).date(),
+                 pd.datetime(2013, 12, 26).date(),
+                 pd.datetime(2013, 11, 27).date(), # -- Only 28 bigoffs.
+                 pd.datetime(2013, 12, 23).date()] # -- No bigoffs.
     meta_gb = lc.meta.groupby(lc.meta.index).mean()
     ndates = meta_gb[(meta_gb.null_percent < 0.05) &
                      (meta_gb.timesteps > 2875) &
@@ -48,9 +80,9 @@ def stack_nights(lc):
         dlightc_gauss = pd.DataFrame(gaussian_filter(dlightc.T, [0, 10])).T
         dlightc_gauss.columns = dlightc.columns
         # -- Min max each source, and append lightcurve array to data.
-        data.append(MinMaxScaler().fit_transform(dlightc_gauss.T).T)
-
-    data = np.array(data).T
+        dlightc_mm = pd.DataFrame(MinMaxScaler().fit_transform(dlightc_gauss))
+        dlightc_mm.columns = dlightc.columns
+        data.append(dlightc_mm.T)
 
     return [data, rel_bigoffs]
 
@@ -93,6 +125,42 @@ def split_bbls_left_right(lc, training_size):
     return [lclass, rclass]
 
 
+def split_bbls_center_strip(lc):
+    """"""
+
+    # -- Get the centroid for all of bbls sources.
+    src_bbls = pd.DataFrame.from_dict(lc.coords_bbls, orient="index") \
+        .rename(columns={0: "bbls"})
+    src_coords = pd.DataFrame.from_dict(lc.coords, orient="index") \
+        .rename(columns={0: "x", 1: "y"})
+    bbl_coords = src_bbls.merge(src_coords, left_index=True, right_index=True) \
+        .groupby(["bbls"]).mean()
+
+    # -- Select bbls in center strip.
+    center_bbls = bbl_coords[(bbl_coords.y > 800) & (bbl_coords.y < 1100)]
+    center_bbls = np.array(center_bbls.index)
+    center_bbls = center_bbls[center_bbls > 1]
+
+    return center_bbls
+
+
+def random_split_bbls_train_test(lc, bbl_list, training_size):
+    """"""
+
+    train_bbls, test_bbls = train_test_split(bbl_list, train_size=training_size,
+        random_state=0)
+
+    train_srcs = np.concatenate([lc.dd_bbl_srcs[bbl] for bbl in train_bbls]).ravel()
+    test_srcs = np.concatenate([lc.dd_bbl_srcs[bbl] for bbl in test_bbls]).ravel()
+
+    # -- Create dict of {key: class} for each left right split.
+    keys = lc.coords_cls.keys()
+    train_class = {key: lc.coords_cls[key] for key in train_srcs if key in keys}
+    test_class = {key: lc.coords_cls[key] for key in test_srcs if key in keys}
+
+    return [train_class, test_class]
+
+
 def class_sources(lc):
     """"""
 
@@ -104,32 +172,103 @@ def class_sources(lc):
     return [res, com, mix, mis]
 
 
-
 def train_test_datacube(data, lclass, rclass):
     """"""
 
-    # -- Select all sources for training/testing.
-    test = data[:, np.array(rclass.keys()) - 1, :]
-    train = data[:, np.array(lclass.keys()) - 1, :]
+    # -- Selet all sources for training/testing.
+    test = pd.concat([df[df.index.isin(np.array(rclass.keys()))] for df in data])
+    train = pd.concat([df[df.index.isin(np.array(lclass.keys()))] for df in data])
 
-    # -- Reshape into 2d array.
-    test_data = np.vstack(test.T)
-    train_data = np.vstack(train.T)
+    # -- Create array of training and testing labels.
+    test_labels = [lc.coords_cls[idx] == 1 for idx in test.index]
+    train_labels = [lc.coords_cls[idx] == 1 for idx in train.index]
 
-    # -- Reshape labels.
-    test_labels = (np.array(rclass.values() * data.shape[-1]).ravel() == 1).astype(int)
-    train_labels = (np.array(lclass.values() * data.shape[-1]).ravel() == 1).astype(int)
-
-    return [train_data, train_labels, test_data, test_labels]
+    return [train, train_labels, test, test_labels]
 
 
-def dumb_classifier():
-    # -- Predict buildings as residential or non-residential.
-    clf = RandomForestClassifier(n_estimators=1000, random_state=0,
-        class_weight="balanced")
-    clf.fit(train_data, train_labels)
-    testpred = clf.predict(test_data)
+def use_tsfresh(train, test, outputf):
+    """"""
+
+    test_fname = os.path.join(outputf, "tsfresh_leftright_7030_test.csv")
+    train_fname = os.path.join(outputf, "tsfresh_leftright_7030_train.csv")
+
+    param_dict = {'length': None, 'maximum': None, 'mean': None, 'median': None,
+                  'minimum': None, 'standard_deviation': None, 'variance': None,
+                  'sum_values': None, 'number_peaks': [{'n': 1}, {'n': 3},
+                  {'n': 5}, {'n': 10}, {'n': 50}]}
+
+    if os.path.isfile(test_fname):
+        test_exfeatures = pd.read_csv(test_fname)
+    else:
+        print("LIGHTCURVES: Creating tsfresh features for test set.           ")
+        test_temp = test.reset_index().rename(columns={"index": "src"})
+        test_temp.index = test_temp.src.astype(str) + "-" + test_temp.index.astype(str)
+        test_temp.drop("src", axis=1, inplace=True)
+        test_temp = test_temp.stack()
+        # -- tsfresh test data.
+        test_exfeatures = extract_features(test_temp.reset_index(),
+            column_id="src", column_sort="level_1",
+            default_fc_parameters=param_dict)
+        # -- Write to file.
+        test_exfeatures.to_csv(test_fname)
+
+    if os.path.isfile(train_fname):
+        train_exfeatures = pd.read_csv(train_fname)
+    else:
+        print("LIGHTCURVES: Creating tsfresh features for train set.          ")
+        train_temp = train.reset_index().rename(columns={"index": "src"})
+        train_temp.index = train_temp.src.astype(str) + "-" + train_temp.index.astype(str)
+        train_temp.drop("src", axis=1, inplace=True)
+        train_temp = train_temp.stack()
+        # -- tsfresh train data.
+        train_exfeatures = extract_features(train_temp.reset_index(),
+            column_id="src", column_sort="level_1",
+            default_fc_parameters=param_dict)
+        # -- Write to file.
+        train_exfeature.to_csv(train_fname)
+
+    for df in [test_exfeatures, train_exfeatures]:
+        df["src"] = [int(str(idx).split("-")[0]) for idx in df["id"]]
+        df["num"] = [int(str(idx).split("-")[1]) for idx in df["id"]]
+        df.sort_values("num", inplace=True)
+        df.set_index("src", inplace=True)
+        df.drop(["id", "num"], axis=1, inplace=True)
+
+    return [train_exfeatures, test_exfeatures]
+
+
+def dumb_classifier(fname, train, train_labels, test, test_labels):
+    if os.path.isfile(fname):
+        clf = joblib.load(fname)
+    else:
+        # -- Predict buildings as residential or non-residential.
+        clf = RandomForestClassifier(n_estimators=1000, random_state=0,
+            class_weight="balanced")
+        clf.fit(train, train_labels)
+        joblib.dump(clf, fname)
+
+    testpred = clf.predict(test)
+    print("LIGHTCURVES: Confusion matrix of individual nights.")
     print(confusion_matrix(test_labels, testpred))
+
+    df = pd.DataFrame(zip(test.index, testpred)) \
+        .rename(columns={0: "idx", 1: "pred"})
+    df["bbl"] = [lc.coords_bbls[idx] for idx in df["idx"]]
+    df_size = df.groupby("bbl").size()
+    df = df.groupby("bbl").mean()
+    df["N"] = df_size
+    df["pred20"] = df["pred"] > 0.2
+    df["pred30"] = df["pred"] > 0.3
+    df["pred40"] = df["pred"] > 0.4
+    df["pred45"] = df["pred"] > 0.45
+    df["pred50"] = df["pred"] > 0.5
+    df["pred60"] = df["pred"] > 0.6
+    df["actual"] = [lc.dd_bbl_bldg2[idx] == 1 for idx in df.index]
+    df["correct"] = df["pred50"] == df["actual"]
+    print("LIGHTCURVES: Confusion matrix of bbls.")
+    print(confusion_matrix(df.actual, df.pred50))
+
+    return df
 
 
 # -- CODE HAS BEEN REVISED...
@@ -147,54 +286,6 @@ def dtw_cluster(mean_gaus_mm, ts_mm):
 
     print("\n", confusion_matrix((np.array(lc.coords_cls.values()) > 1) \
         .astype(int), np.array(preds)[np.array(lc.coords_cls.keys()) - 1]))
-
-
-def use_tsfresh():
-    """"""
-
-    param_dict = EfficientFCParameters()
-    for key in ["fft_coefficient", "change_quantiles", "cwt_coefficients"]:
-        del param_dict[key]
-
-    data = []
-    for idx, src in enumerate(mean_gaus_mm):
-        data.append([(idx, val) for val in src])
-    data = [val for sublist in data for val in sublist]
-    df = pd.DataFrame(data, columns=["idx", "val"])
-
-    df = pd.DataFrame(mean_gaus_mm[np.array(lc.coords_cls.keys()) - 1])
-    df["id"] = lc.coords_cls.values()
-    df["id"] = (df["id"] == 1).astype(int)
-
-    if os.path.isfile("./tsfresh_mean_gaus_mm.csv"):
-        exfeatures = pd.read_csv("./tsfresh_mean_gaus_mm.csv")
-    else:
-        exfeatures = extract_features(df, column_id="idx", default_fc_parameters=param_dict)
-        exfeature.to_csv("./tsfresh_mean_gaus_mm.csv")
-
-    df1 = exfeatures.loc[np.array(lc.coords_cls.keys()) - 1]
-    df1["bldgclass"] = lc.coords_cls.values()
-    df1["residential"] = (df1["bldgclass"] == 1).astype(int)
-    df1.fillna(0, inplace=True)
-
-    y = df1.iloc[:, -2:]
-    x = df1.iloc[:, :-2]
-
-    fpreds = ['val__number_peaks__n_3', 'val__ar_coefficient__k_10__coeff_2',
-        'val__energy_ratio_by_chunks__num_segments_10__segment_focus_6',
-        'val__agg_linear_trend__f_agg_"var"__chunk_len_50__attr_"stderr"']
-    fpreds = x.columns
-
-    xtrain, xtest, ytrain, ytest = train_test_split(x, y, test_size=0.3, random_state=0)
-    clf = RandomForestClassifier(n_estimators=1000, random_state=0)
-    clf.fit(xtrain[fpreds], ytrain["residential"])
-    testpred = clf.predict(xtest[fpreds])
-    print(confusion_matrix(ytest["residential"], testpred))
-
-    clf = LogisticRegression(C=100, penalty="l1")
-    clf.fit(xtrain[fpreds], ytrain["residential"])
-    testpred = clf.predict(xtest[fpreds])
-    print(confusion_matrix(ytest["residential"], testpred))
 
 
 def bottom_left_right_split(lc):
@@ -286,3 +377,10 @@ def sources_to_bbls(lc):
     clf.fit(xtrain, ytrain)
     testpred = clf.predict(xtest)
     print(confusion_matrix(ytest, testpred))
+
+
+if __name__ == "__main__":
+    data, rel_bigoffs = stack_nights_df(lc)
+    lclass, rclass = split_bbls_left_right(lc, 0.7)
+    train, train_labels, test, test_labels = train_test_datacube(data, lclass, rclass)
+    train_exfeatures, test_exfeatures = use_tsfresh(train, test, "./")
