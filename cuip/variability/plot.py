@@ -10,6 +10,7 @@ import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import scipy.ndimage.measurements as ndm
 from sklearn.cluster import KMeans
+from scipy.stats import mannwhitneyu
 from scipy.stats.stats import linregress
 from sklearn.metrics import silhouette_score
 
@@ -191,18 +192,24 @@ def plot_winter_summer_bigoffs_boxplot(lc, res=True):
 
     bidx = lc.bigoffs.index
     winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
+    winter = winter[(winter.isnull().sum(axis=1) < 3800) &
+                    (winter.index.isin(lc.nights)) &
+                    ((~winter.isnull()).sum(axis=1) > 1000)]
     summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
+    summer = summer[(summer.isnull().sum(axis=1) < 3800) &
+                    (summer.index.isin(lc.nights)) &
+                    ((~summer.isnull()).sum(axis=1) > 1000)]
 
     if res:
         res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
         # res_labs = filter(lambda x: lc.coords[x][1] > 1020, lc.coords.keys())
-        winter = winter[res_labs].median(axis=1).dropna()
-        summer = summer[res_labs].median(axis=1).dropna()
+        winter = winter[res_labs].median(axis=1)
+        summer = summer[res_labs].median(axis=1)
         title = "Median Weekday {} Bigoff Timestep for Summer and Winter" \
             .format("Residential")
     else:
-        winter = winter.median(axis=1).dropna()
-        summer = summer.median(axis=1).dropna()
+        winter = winter.median(axis=1)
+        summer = summer.median(axis=1)
         title = "Median Weekday Bigoff Timestep for Summer and Winter"
 
     fig, ax = plt.subplots(figsize=(8, 2))
@@ -213,6 +220,61 @@ def plot_winter_summer_bigoffs_boxplot(lc, res=True):
     ax.set_xlabel("Timesteps")
     ax.set_title(title)
 
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_winter_summer_hist(lc, res=True):
+    """"""
+
+    bidx = lc.bigoffs.index
+    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
+    winter = winter[(winter.isnull().sum(axis=1) < 3800) &
+                    (winter.index.isin(lc.nights)) &
+                    ((~winter.isnull()).sum(axis=1) > 1000)]
+    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
+    summer = summer[(summer.isnull().sum(axis=1) < 3800) &
+                    (summer.index.isin(lc.nights)) &
+                    ((~summer.isnull()).sum(axis=1) > 1000)]
+
+    if res:
+        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+        winter = winter[res_labs]
+        summer = summer[res_labs]
+
+    wbigoffs = winter.values.ravel()[~np.isnan(winter.values.ravel())]
+    sbigoffs = summer.values.ravel()[~np.isnan(summer.values.ravel())]
+
+    ks_res = stat.ks_2samp(wbigoffs, sbigoffs)
+    mw_res = mannwhitneyu(wbigoffs, sbigoffs)
+    resampled_wbig = np.random.choice(wbigoffs, len(sbigoffs), False)
+    en_res = stat.entropy(resampled_wbig, sbigoffs)
+    print("Winter: Mean: {:.0f}, Median: {:.0f}                              " \
+        .format(wbigoffs.mean(), np.median(wbigoffs)))
+    print("Summer: Mean: {:.0f}, Median: {:.0f}                              " \
+        .format(sbigoffs.mean(), np.median(sbigoffs)))
+
+    fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(8, 4))
+    ax1.hist(wbigoffs, 31)
+    ax1.axvline(wbigoffs.mean(), c="k", alpha=0.7, label="Mean", ls="dashed", lw=0.8)
+    ax1.axvline(np.median(wbigoffs), c="k", alpha=0.7, label="Median", lw=0.8)
+    ax2.hist(sbigoffs, 31)
+    ax2.axvline(sbigoffs.mean(), c="k", alpha=0.7, label="Mean", ls="dashed", lw=0.8)
+    ax2.axvline(np.median(sbigoffs), c="k", alpha=0.7, label="Median", lw=0.8)
+
+    ax1.text(20, 220, "Entropy: {:.4f}".format(en_res), color="w", size=8)
+    ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue),
+        color="w", size=8)
+    ax1.text(20, 20, "Mann-Whitney (p-value): {:.4f}".format(mw_res.pvalue),
+        color="w", size=8)
+
+    ax1.set_title("Winter Bigoffs")
+    for ax in [ax1, ax2]:
+        ax.set_xlabel("Timesteps")
+        ax.set_ylabel("Counts")
+        ax.set_xlim(0, 3000)
+    ax2.set_title("Summer Bigoffs")
+    plt.legend()
     plt.tight_layout()
     plt.show(block=True)
 
@@ -474,42 +536,6 @@ def plot_specific_bbls(bbl_list, lc, bg_img=False):
     patches = [mpatches.Patch(color=colors[int(i) - 1],
         label="{}".format(labs[int(i) - 1])) for i in values]
     plt.legend(handles=patches, ncol=17, frameon=frameon)
-    plt.tight_layout()
-    plt.show(block=True)
-
-
-def plot_winter_summer_hist(lc, res=True):
-    """"""
-
-    bidx = lc.bigoffs.index
-    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5) & (bidx.isin(lc.nights))]
-    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5) & (bidx.isin(lc.nights))]
-
-    if res:
-        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
-        winter = winter[res_labs]
-        summer = summer[res_labs]
-
-    wbigoffs = winter.values.ravel()[~np.isnan(winter.values.ravel())]
-    sbigoffs = summer.values.ravel()[~np.isnan(summer.values.ravel())]
-
-    ks_res = stat.ks_2samp(wbigoffs, sbigoffs)
-    resampled_wbig = np.random.choice(wbigoffs, len(sbigoffs), False)
-    en_res = stat.entropy(resampled_wbig, sbigoffs)
-
-    fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(8, 4))
-    ax1.hist(wbigoffs, 31)
-    ax2.hist(sbigoffs, 31)
-
-    ax1.text(20, 20, "Entropy: {:.4f}".format(en_res), color="w", size=8)
-    ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue), color="w", size=8)
-
-    ax1.set_title("Winter Bigoffs")
-    for ax in [ax1, ax2]:
-        ax.set_xlabel("Timesteps")
-        ax.set_ylabel("Counts")
-        ax.set_xlim(0, 3000)
-    ax2.set_title("Summer Bigoffs")
     plt.tight_layout()
     plt.show(block=True)
 
