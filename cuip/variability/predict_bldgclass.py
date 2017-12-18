@@ -1,5 +1,6 @@
 from __future__ import print_function
 
+import cPickle
 import numpy as np
 import pandas as pd
 # from fastdtw import fastdtw
@@ -22,6 +23,7 @@ def stack_nights_np(lc):
     Returns:
         data (array) - data cube.
     """
+
 
     holidates = [pd.datetime(2013, 12, 25).date(),
                  pd.datetime(2013, 12, 26).date()]
@@ -51,18 +53,20 @@ def stack_nights_np(lc):
 
 def stack_nights_df(lc):
     """"""
-
-    holidates = [pd.datetime(2013, 12, 25).date(),
-                 pd.datetime(2013, 12, 26).date(),
+    # -- List nights with complete data.
+    holidates = [pd.datetime(2013, 12, 25).date(), # -- Anomaly.
+                 pd.datetime(2013, 12, 26).date(), # -- Anomaly.
                  pd.datetime(2013, 11, 27).date(), # -- Only 28 bigoffs.
                  pd.datetime(2013, 12, 23).date()] # -- No bigoffs.
+    # -- Groupby to combine days that were spread over multiple files.
     meta_gb = lc.meta.groupby(lc.meta.index).mean()
+    # -- Select weekday nights with full data.
     ndates = meta_gb[(meta_gb.null_percent < 0.05) &
                      (meta_gb.timesteps > 2875) &
                      ([ii.weekday() < 5 for ii in meta_gb.index]) &
                      ([ii not in holidates for ii in meta_gb.index])].index
-
-    rel_bigoffs = lc.bigoffs.loc[ndates] > 0
+    # -- Create a mask for True bigoffs.
+    bigoffs_mask = lc.bigoffs.loc[ndates] > 0
 
     data = []
     # -- Stack multiple nights.
@@ -72,7 +76,7 @@ def stack_nights_df(lc):
         lightc = pd.DataFrame(lc.src_lightc[:2876, :])
         lightc.columns = np.array(lightc.columns) + 1
         # -- Select lightcurves with a bigoff.
-        bidx = [idx for idx, val in rel_bigoffs.loc[lc.night].items() if val == True]
+        bidx = [idx for idx, val in bigoffs_mask.loc[lc.night].items() if val == True]
         lightc = lightc.loc[:, np.array(bidx)]
         # -- Detrend (i.e., subtract the median).
         dlightc = (lightc.T - np.median(lightc, axis=1)).T
@@ -84,7 +88,7 @@ def stack_nights_df(lc):
         dlightc_mm.columns = dlightc.columns
         data.append(dlightc_mm.T)
 
-    return [data, rel_bigoffs]
+    return [data, bigoffs_mask, ndates]
 
 
 def split_bbls_left_right(lc, training_size):
