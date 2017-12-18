@@ -35,7 +35,7 @@ class LightCurves(object):
         self._bbl_dicts(bbl_path, pluto_mn)
 
         # -- Load srcs to be ignored.
-        null_path = os.path.join(self.path_outpu, "null_data.pkl")
+        null_path = os.path.join(self.path_outpu, "LightCurves", "null_data.pkl")
         self._ign_srcs(null_path)
 
         # -- Load appertures.
@@ -45,7 +45,7 @@ class LightCurves(object):
         self._src_centers(bbl_path)
 
         # -- Load bigoffs if they have been saved to file.
-        path_bigoff = os.path.join(self.path_outpu, "bigoffs.pkl")
+        path_bigoff = os.path.join(self.path_outpu, "LightCurves", "bigoffs.pkl")
 
         if os.path.isfile(path_bigoff):
             self._load_bigoffs(path_bigoff)
@@ -104,6 +104,17 @@ class LightCurves(object):
         print("LIGHTCURVES: Loading bigoffs from file...                      ")
         sys.stdout.flush()
         self.bigoffs = pd.read_pickle(inpath).set_index("index")
+
+        # -- Winter and Summer bigoff times.
+        bidx = self.bigoffs.index
+        # -- Split by month and only select weekdays.
+        self.bigoffs_win = self.bigoffs[(bidx.month >= 9) & (bidx.dayofweek < 5)]
+        self.bigoffs_sum = self.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
+        # -- Limit to nights with valid data.
+        for season in [self.bigoffs_win, self.bigoffs_sum]:
+            season = season[(season.index.isin(self.nights)) &
+                            (season.isnull().sum(axis=1) < 3800) &
+                            ((~season.isnull()).sum(axis=1) > 1000)]
 
         print("LIGHTCURVES: Complete ({:.2f}s)                               " \
             .format(time.time() - tstart))
