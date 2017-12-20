@@ -504,6 +504,8 @@ if __name__ == "__main__":
     SUPP = os.environ["SUPPPATH"]
     OUTP = os.environ["OUTPATH"]
 
+    # LIGH = os.path.join(OUTP, "histogram_matching")
+
     # -- Create LightCurve object.
     lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
 
