@@ -1,16 +1,16 @@
 from __future__ import print_function
 
 import re
+import scipy
 import cPickle
 import numpy as np
-import scipy.stats as stat
 import matplotlib.pyplot as plt
-from scipy.stats import ttest_ind
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
 import scipy.ndimage.measurements as ndm
 from sklearn.cluster import KMeans
-from scipy.stats import mannwhitneyu
+from scipy.misc import factorial
+from scipy.optimize import curve_fit
 from scipy.stats.stats import linregress
 from sklearn.metrics import silhouette_score
 
@@ -29,7 +29,7 @@ def read_img(file_path):
                 .reshape(2160, 4096, 3)[...,::-1]
 
     if file_path.endswith(".png"):
-        img = imread(file_path)
+        img = scipy.misc.imread(file_path)
 
     return img
 
@@ -66,7 +66,7 @@ def plot_night_img(lc, show=True, res=False):
     xx, yy = zip(*valsf)
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(dimg - dimg.mean(axis=0), aspect="auto")
+    ax.imshow(dimg - dimg.mean(axis=0), aspect="auto", cmap="viridis_r")
     ax.scatter(np.array(xx), np.arange(len(xx)), marker="x", s=4)
     ax.set_ylim(0, dimg.shape[0])
     ax.set_xlim(0, dimg.shape[1])
@@ -184,99 +184,154 @@ def plot_lightcurve_line(lc, idx):
     plt.show(block=True)
 
 
-def plot_winter_summer_bigoffs_boxplot(lc, res=True):
-    """Plot boxplots comparing bigoffs for summer and winter observations.
+def plot_winter_summer_bigoffs_boxplot(lc):
+    """Plot boxplots comparing bigoffs for summer and winter observations for
+    residential sources.
     Args:
         lc (obj) - LightCurve object.
     """
 
-    bidx = lc.bigoffs.index
-    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
-    winter = winter[(winter.isnull().sum(axis=1) < 3800) &
-                    (winter.index.isin(lc.nights)) &
-                    ((~winter.isnull()).sum(axis=1) > 1000)]
-    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
-    summer = summer[(summer.isnull().sum(axis=1) < 3800) &
-                    (summer.index.isin(lc.nights)) &
-                    ((~summer.isnull()).sum(axis=1) > 1000)]
+    # -- List of residential sources.
+    res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+    # -- Seasonal median bigoff for residential sources.
+    winter = lc.bigoffs_win[res_labs].median(axis=1).dropna()
+    summer = lc.bigoffs_sum[res_labs].median(axis=1).dropna()
 
-    if res:
-        res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
-        # res_labs = filter(lambda x: lc.coords[x][1] > 1020, lc.coords.keys())
-        winter = winter[res_labs].median(axis=1)
-        summer = summer[res_labs].median(axis=1)
-        title = "Median Weekday {} Bigoff Timestep for Summer and Winter" \
-            .format("Residential")
-    else:
-        winter = winter.median(axis=1)
-        summer = summer.median(axis=1)
-        title = "Median Weekday Bigoff Timestep for Summer and Winter"
-
+    # -- Plot.
     fig, ax = plt.subplots(figsize=(8, 2))
     ax.boxplot([winter.values, summer.values],vert=False, positions=[0, 0.2],
         labels=["Winter", "Summer"])
-
-    ax.set_ylim(-0.1, 0.3)
+    ax.set_title("Median Weekday Res. Bigoff Timestep for Summer and Winter")
     ax.set_xlabel("Timesteps")
-    ax.set_title(title)
-
+    ax.set_ylim(-0.1, 0.3)
     plt.tight_layout()
     plt.show(block=True)
 
 
-def plot_winter_summer_hist(lc, res=True):
+def plot_winter_summer_hist(lc):
+    """Plot histogram of weekday winter and summer residential bigoffs.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+
+    # -- List of residential sources.
+    res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+    # -- Seasonal median bigoff for residential sources.
+    winter = lc.bigoffs_win[res_labs]
+    summer = lc.bigoffs_sum[res_labs]
+    # -- Pull all bigoff timesteps.
+    wbigoffs = winter.values.ravel()[~np.isnan(winter.values.ravel())]
+    sbigoffs = summer.values.ravel()[~np.isnan(summer.values.ravel())]
+
+    # -- Bins and bin middles for histograms.
+    x_bins = np.arange(0, 3000, 100)
+    x_middles = x_bins[1:] - 50
+
+    # -- Fitted distribution.
+    dist_names = ['burr'] # ['beta', 'burr', 'gausshyper', 'kstwobign',  'mielke', 'nakagami']
+    results = []
+    # -- Plot
+    fig, [ax1, ax2, ax3] = plt.subplots(1, 3, figsize=(12, 4), sharey=True)
+    for ax, bigoffs, c in [[ax1, wbigoffs, "#56B4E9"], [ax2, sbigoffs, "#E69F00"]]:
+        # -- Plot summer/winter hist, mean, and median.
+        ax.hist(bigoffs, x_bins, normed=True, color="gray")
+        ax.axvline(bigoffs.mean(), c="k", ls="dashed")
+        ax.axvline(np.median(bigoffs), c="k", ls=":")
+        # -- For each distribution, fit for both summer and winter.
+        for dist_name in dist_names:
+            dist = getattr(scipy.stats, dist_name)
+            param = dist.fit(bigoffs)
+            pdf = dist.pdf(x_middles, *param)
+            results.append([dist_name, pdf])
+            # -- Plot fitted models on histogram and on ax3.
+            for ax_ in [ax, ax3]:
+                ax_.axvline(dist.mean(*param), c=c, ls="dashed")
+                ax_.axvline(dist.median(*param), c=c, ls=":")
+                ax_.plot(x_middles, pdf,  c=c)
+
+    # -- Compare histograms of summer v. winter bigoffs.
+    ks_res = scipy.stats.ks_2samp(wbigoffs, sbigoffs)
+    mw_res = scipy.stats.mannwhitneyu(wbigoffs, sbigoffs)
+    resampled_wbig = np.random.choice(wbigoffs, len(sbigoffs), False)
+    en_res = scipy.stats.entropy(resampled_wbig, sbigoffs)
+    # -- Compare fitted models of summer v. winter bigoffs.
+    ks_mod = scipy.stats.ks_2samp(results[0][1], results[1][1])
+    mw_mod = scipy.stats.mannwhitneyu(results[0][1], results[1][1])
+    en_mod = scipy.stats.entropy(results[0][1], results[1][1])
+    res = [[ks_res, mw_res, en_res], [ks_mod, mw_mod, en_mod]]
+
+    # -- Text
+    text = ["Entropy: {:.4f}", "KS-test (p-value): {:.4f}",
+            "Mann-Whitney (p-value): {:.4f}"]
+    for ax, res_ in zip([ax1, ax3], res):
+        ax.text(20, 0.00007, text[0].format(res_[2]), size=8)
+        ax.text(20, 0.00004, text[1].format(res_[0].pvalue), size=8)
+        ax.text(20, 0.00001, text[2].format(res_[1].pvalue), size=8)
+    ax1.text(20, 0.0001, "Histogram comparison:", size=8)
+    ax3.text(20, 0.0001, "Model comparison:", size=8)
+
+    for ax in [ax1, ax2, ax3]:
+        ax.set_xlabel("Timesteps")
+        ax.set_xlim(0, 3000)
+        ax.set_ylim(0, 0.00085)
+
+    solid = plt.axvline(-1, c="gray")
+    dash = plt.axvline(-1, ls="dashed", c="gray")
+    dot = plt.axvline(-1, ls=":", c="gray")
+
+    ax1.set_ylabel("Counts (Normed)")
+    ax1.set_title("Winter Bigoffs")
+    ax2.set_title("Summer Bigoffs")
+    ax3.set_title("Fitted Burr Distributions")
+    ax3.legend([dash, dot, solid], ["Mean", "Median", "Fitted Burr Dist."])
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_winter_summer_BEST_results(lc, res=True):
     """"""
 
-    bidx = lc.bigoffs.index
-    winter = lc.bigoffs[(bidx.month > 9) & (bidx.dayofweek < 5)]
-    winter = winter[(winter.isnull().sum(axis=1) < 3800) &
-                    (winter.index.isin(lc.nights)) &
-                    ((~winter.isnull()).sum(axis=1) > 1000)]
-    summer = lc.bigoffs[(bidx.month < 9) & (bidx.dayofweek < 5)]
-    summer = summer[(summer.isnull().sum(axis=1) < 3800) &
-                    (summer.index.isin(lc.nights)) &
-                    ((~summer.isnull()).sum(axis=1) > 1000)]
+    winter = lc.bigoffs_win
+    summer = lc.bigoffs_sum
 
     if res:
         res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
         winter = winter[res_labs]
         summer = summer[res_labs]
 
-    wbigoffs = winter.values.ravel()[~np.isnan(winter.values.ravel())]
-    sbigoffs = summer.values.ravel()[~np.isnan(summer.values.ravel())]
+    y1 = winter.values.ravel()[~np.isnan(winter.values.ravel())]
+    y2 = summer.values.ravel()[~np.isnan(summer.values.ravel())]
 
-    ks_res = stat.ks_2samp(wbigoffs, sbigoffs)
-    mw_res = mannwhitneyu(wbigoffs, sbigoffs)
-    resampled_wbig = np.random.choice(wbigoffs, len(sbigoffs), False)
-    en_res = stat.entropy(resampled_wbig, sbigoffs)
-    print("Winter: Mean: {:.0f}, Median: {:.0f}                              " \
-        .format(wbigoffs.mean(), np.median(wbigoffs)))
-    print("Summer: Mean: {:.0f}, Median: {:.0f}                              " \
-        .format(sbigoffs.mean(), np.median(sbigoffs)))
+    y = pd.DataFrame(dict(value=np.r_[y1, y2], group=np.r_[['winter']*len(y1),
+        ['summer']*len(y2)]))
 
-    fig, [ax1, ax2] = plt.subplots(1, 2, figsize=(8, 4))
-    ax1.hist(wbigoffs, 31)
-    ax1.axvline(wbigoffs.mean(), c="k", alpha=0.7, label="Mean", ls="dashed", lw=0.8)
-    ax1.axvline(np.median(wbigoffs), c="k", alpha=0.7, label="Median", lw=0.8)
-    ax2.hist(sbigoffs, 31)
-    ax2.axvline(sbigoffs.mean(), c="k", alpha=0.7, label="Mean", ls="dashed", lw=0.8)
-    ax2.axvline(np.median(sbigoffs), c="k", alpha=0.7, label="Median", lw=0.8)
+    u_m = y.value.mean()
+    u_s = y.value.std() * 2
+    o_low = 500
+    o_high = 1500
 
-    ax1.text(20, 220, "Entropy: {:.4f}".format(en_res), color="w", size=8)
-    ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue),
-        color="w", size=8)
-    ax1.text(20, 20, "Mann-Whitney (p-value): {:.4f}".format(mw_res.pvalue),
-        color="w", size=8)
+    with pm.Model() as model:
+        group1_mean = pm.Normal('group1_mean', u_m, sd=u_s)
+        group2_mean = pm.Normal('group2_mean', u_m, sd=u_s)
+        group1_std = pm.Uniform('group1_std', lower=o_low, upper=o_high)
+        group2_std = pm.Uniform('group2_std', lower=o_low, upper=o_high)
+        v = pm.Exponential('v_minus_one', 1/29.) + 1
+        A1 = group1_std**-2
+        A2 = group2_std**-2
 
-    ax1.set_title("Winter Bigoffs")
-    for ax in [ax1, ax2]:
-        ax.set_xlabel("Timesteps")
-        ax.set_ylabel("Counts")
-        ax.set_xlim(0, 3000)
-    ax2.set_title("Summer Bigoffs")
-    plt.legend()
-    plt.tight_layout()
-    plt.show(block=True)
+        group1 = pm.StudentT('winter', nu=v, mu=group1_mean, lam=A1, observed=y1)
+        group2 = pm.StudentT('summer', nu=v, mu=group2_mean, lam=A2, observed=y2)
+
+        diff_of_means = pm.Deterministic('difference of means', group1_mean - group2_mean)
+        diff_of_stds = pm.Deterministic('difference of stds', group1_std - group2_std)
+        effect_size = pm.Deterministic('effect size',
+            diff_of_means / np.sqrt((group1_std**2 + group2_std**2) / 2))
+
+        trace = pm.sample(6000, njobs=2)
+
+    pm.plot_posterior(trace, varnames=['group1_mean','group2_mean', 'group1_std',
+        'group2_std', 'v_minus_one'], color='#87ceeb')
+    plt.show()
 
 
 def plot_appertures(lc):
@@ -544,7 +599,7 @@ def plot_cluster_income(lc, nplot=6):
     """"""
 
     # -- Load residential income images.
-    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
     inc_img = np.load(inc_img_path)
 
     # -- What's a reasonable number of clusters?
@@ -571,7 +626,7 @@ def plot_income_bigoffs_hist(lc):
     """"""
 
     # -- Load residential income images.
-    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
     inc_img = np.load(inc_img_path)
 
     # -- Create masks for 0k-50k and >= 50k income sources.
@@ -622,7 +677,7 @@ def plot_income_bigoffs_boxplot(lc):
     """
 
     # -- Load residential income images.
-    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
     inc_img = np.load(inc_img_path)
 
     # -- Create masks for 0k-50k and >= 50k income sources.
@@ -636,7 +691,8 @@ def plot_income_bigoffs_boxplot(lc):
 
     # -- Plot.
     fig, ax = plt.subplots(figsize=(8, 2))
-    ax.boxplot([src_50k_bigoff.median(axis=1).dropna().values, src_0k50k_bigoff.median(axis=1).dropna().values],
+    ax.boxplot([src_50k_bigoff.median(axis=1).dropna().values,
+                src_0k50k_bigoff.median(axis=1).dropna().values],
         vert=False, positions=[0, 0.2],
         labels=["Median Income >= $50,000", "Median Income < $50,000"])
 
@@ -675,7 +731,7 @@ def plot_acs_income(lc, res=True):
     if res:
         inc_img = inc_img * (arb_img == 1.0)
 
-    inc_img_path = os.path.join(lc.path_outpu, "inc_img.npy")
+    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
     np.save(inc_img_path, inc_img)
 
     arb_img[arb_img == 1.] = np.nan
@@ -775,7 +831,7 @@ def plot_arbclass_timeseries(lc, subsample="Percent", N=0.5, alpha=0.6):
     plt.show()
 
 
-def plot_src_lightcurves(lc, data, start_idx, end_idx):
+def plot_src_lightcurves(lc, data, ndates, start_idx, end_idx):
     """Successively plot lightcurves for each source between start_idx and
     end_idx from datacube.
     Args:
@@ -786,15 +842,23 @@ def plot_src_lightcurves(lc, data, start_idx, end_idx):
     """
 
     for ii in range(start_idx, end_idx):
-        fig, ax = plt.subplots(figsize=(12, 6))
-        ax.imshow(data[:, ii, :].T, aspect="auto")
-        ax.set_title("Lightcurves For Source {} (BBL: {}, Cls: {})" \
-            .format(ii, lc.coords_bbls[ii + 1], lc.coords_cls[ii + 1]))
-        ax.set_yticks(range(len(ndates)))
-        ax.set_yticklabels(ndates)
-        ax.set_ylabel("Nights")
-        ax.set_xlabel("Timesteps")
-        plt.show(block=True)
+        if ii in lc.coords_cls.keys():
+            dates = []
+            rows = []
+            for nn, df in zip(ndates, data):
+                if ii in df.index:
+                    dates.append(nn)
+                    rows.append(np.array(df.loc[ii]))
+
+            fig, ax = plt.subplots(figsize=(12, 6))
+            ax.imshow(np.array(rows), aspect="auto")
+            ax.set_title("Lightcurves For Source {} (BBL: {}, Cls: {})" \
+                .format(ii, lc.coords_bbls[ii], lc.coords_cls[ii]))
+            ax.set_yticks(range(len(dates)))
+            ax.set_yticklabels(dates)
+            ax.set_ylabel("Nights")
+            ax.set_xlabel("Timesteps")
+            plt.show(block=True)
 
 
 def plot_datacube_curves(data, class_sources, night=0):
