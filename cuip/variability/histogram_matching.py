@@ -3,12 +3,13 @@ from __future__ import print_function
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.misc import imread
 from skimage.data import chelsea, coffee
 
 plt.style.use("ggplot")
 
 
-def single_channel_cdf(channel):
+def channel_cdf(channel):
     """Calculate channel's cdf.
     Args:
         Channel (array) - 2D image channel.
@@ -23,7 +24,7 @@ def single_channel_cdf(channel):
     return cdf
 
 
-def single_channel_vals(img_cdf, ref_cdf):
+def channel_vals(img_cdf, ref_cdf):
     """Map values from img_cdf to ref_cdf.
     Args:
         ref_cdf (array) - reference channel cdf.
@@ -37,7 +38,7 @@ def single_channel_vals(img_cdf, ref_cdf):
     return np.array(vals).astype(float)
 
 
-def single_channel_match(channel, vals):
+def channel_match(channel, vals):
     """Replace values in channel with mapped values.
     Args:
         channel (array) - image channel.
@@ -54,21 +55,53 @@ def single_channel_match(channel, vals):
     return match
 
 
-def rgb_match(img, ref):
+def rgb_cdfs(img):
+    """Return cdfs for all img channels.
+    Args:
+        img (array) - 3D image array.
+    Returns:
+        cdfs (array).
+    """
+    cdfs = [channel_cdf(rgb_select(img, ii)) for ii in range(3)]
+
+    return cdfs
+
+
+def rgb_select(img, ii):
+    """Select color channel from 2D or 1D image.
+    Args:
+        img (array) - 3 color image.
+        ii (int) - channel to select.
+    Returns:
+        chan (array) - selected channel.
+    """
+    # -- 2D RGB image.
+    if len(img.shape) == 3:
+        chan = img[:, :, ii]
+    # -- 1D RGB 'image'.
+    elif len(img.shape) == 2:
+        chan = img[:, ii]
+    else:
+        raise ValueError("Invalid image input.")
+
+    return chan
+
+
+def rgb_match(img, img_cdfs, ref_cdfs):
     """Histogram matching for 3 color images.
     Args:
         img (array) - target image.
-        ref (array) - reference image.
+        img_cdf (array)
+        ref_cdf (array)
     Returns:
         match (array) - histogram matched target image.
     """
-    # -- Find cdfs.
-    img_cdfs = [single_channel_cdf(img[:, :, ii]) for ii in range(3)]
-    ref_cdfs = [single_channel_cdf(ref[:, :, ii]) for ii in range(3)]
+    if np.isnan(np.array(img_cdfs).sum()):
+        return np.zeros(np.array(img).shape) - 9999
     # -- Find value map.
-    vals = [single_channel_vals(ii, rr) for ii, rr in zip(img_cdfs, ref_cdfs)]
+    vals = [channel_vals(ii, rr) for ii, rr in zip(img_cdfs, ref_cdfs)]
     # -- Map image values.
-    match = [single_channel_match(img[:, :, ii], vals[ii]) for ii in range(3)]
+    match = [channel_match(rgb_select(img, ii), vals[ii]) for ii in range(3)]
 
     return np.moveaxis(match, 0, -1)
 
@@ -112,7 +145,7 @@ def demo(img=coffee(), ref=chelsea(), figsize=(6, 6)):
         ref (array) - RGB image to use as reference.
         figsize (tup) - plotting size.
     """
-    match = rgb_match(img, ref)
+    match = rgb_match(img, rgb_cdfs(img), rgb_cdfs(ref))
     plot_match(img, ref, match, figsize=figsize)
 
 
@@ -121,33 +154,36 @@ def match_lightcurves(lc):
     Args:
         lc (obj) - LightCurve object.
     """
-    # -- Load registration files to df.
-    fnames = sorted(os.listdir(lc.path_regis))
-    fpaths = [os.path.join(lc.path_regis, fname) for fname in fnames]
-    reg = pd.concat([pd.read_csv(path) for path in fpaths])
     # -- Get lightcurve paths.
     fnames = sorted(os.listdir(lc.path_light))
     fpaths = [os.path.join(lc.path_light, fname) for fname in fnames]
-    # -- Load reference "image" and set reference params.
-    tmp = np.load(fpaths[-1])
-    ref = np.ma.array(tmp[-5, :, :], mask=tmp[-5, :, :] == -9999)
-    ref_params = rgb_params(ref)
-    # -- For all lightcurves, histogram match each night to a reference time.
+    # -- Load reference image and calculate cdfs.
+    ref = np.load(fpaths[-1])
+    ref = np.ma.array(ref, mask=ref == -9999).astype(int)
+    ref_cdfs = rgb_cdfs(ref[14000, :, :])
+    # -- For each lightcurve file...
     for ii, fpath in enumerate(fpaths):
+        # -- Load and mask lightcurve file.
+        lightc = np.load(fpath).astype(int)
+        lightc = np.ma.array(lightc, mask=lightc == -9999).astype(int)
         bname = os.path.basename(fpath)
-        print("LIGHTCURVES: Histogram matching {} ({}/{})                    " \
-            .format(bname, ii + 1, len(fpaths)), end="\r")
+        # -- Print status.
+        print("LIGHTCURVES: Histogram matching {}                            " \
+            .format(bname))
         sys.stdout.flush()
-        # -- Load lightcurves.
-        lightc = np.load(fpath)
-        malightc = np.ma.array(lightc, mask=lightc == -9999)
-        # -- Histogram matching.
-        mlight = np.array([rgb_match(rgb_params(src), ref_params) for src in malightc])
-        # -- Save new lightcurve array.
+        # -- Match source colors to reference.
+        ll = lightc.shape[0]
+        match_lightc = []
+        for ii, src in enumerate(lightc):
+            print("LIGHTCURVES: Source ({}/{})                               " \
+                .format(ii + 1, ll), end="\r")
+            sys.stdout.flush()
+            match_lightc.append(rgb_match(src, rgb_cdfs(src), ref_cdfs))
+        # -- Save new ligthcurve array.
         hpath = os.path.join(lc.path_outpu, "histogram_matching", bname)
-        np.save(hpath, mlight)
+        np.save(hpath, np.array(match_lightc))
 
 
 if __name__ == "__main__":
     demo()
-    # match_lightcurves(lc)
+    match_lightcurves(lc)
