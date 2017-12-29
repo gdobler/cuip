@@ -163,25 +163,28 @@ def match_lightcurves(lc):
     ref_cdfs = rgb_cdfs(ref[14000, :, :])
     # -- For each lightcurve file...
     for ii, fpath in enumerate(fpaths):
-        # -- Load and mask lightcurve file.
-        lightc = np.load(fpath).astype(int)
-        lightc = np.ma.array(lightc, mask=lightc == -9999).astype(int)
+        # -- In and out names.
         bname = os.path.basename(fpath)
-        # -- Print status.
-        print("LIGHTCURVES: Histogram matching {}                            " \
-            .format(bname))
-        sys.stdout.flush()
-        # -- Match source colors to reference.
-        ll = lightc.shape[0]
-        match_lightc = []
-        for ii, src in enumerate(lightc):
-            print("LIGHTCURVES: Source ({}/{})                               " \
-                .format(ii + 1, ll), end="\r")
+        hpath = os.path.join(lc.path_outpu, "histogram_matching")
+        # -- If output does not alread exist.
+        if not bname in os.listdir(hpath):
+            # -- Print status.
+            print("LIGHTCURVES: Histogram matching {}                        " \
+                .format(bname))
             sys.stdout.flush()
-            match_lightc.append(rgb_match(src, rgb_cdfs(src), ref_cdfs))
-        # -- Save new ligthcurve array.
-        hpath = os.path.join(lc.path_outpu, "histogram_matching", bname)
-        np.save(hpath, np.array(match_lightc))
+            # -- Load and mask original lightcurve file.
+            lightc = np.load(fpath).astype(int)
+            lightc = np.ma.array(lightc, mask=lightc == -9999).astype(int)
+            # -- Match source colors to reference.
+            ll = lightc.shape[0]
+            match_lightc = []
+            for ii, src in enumerate(lightc):
+                print("LIGHTCURVES: Source ({}/{})                           " \
+                    .format(ii + 1, ll), end="\r")
+                sys.stdout.flush()
+                match_lightc.append(rgb_match(src, rgb_cdfs(src), ref_cdfs))
+            # -- Save new ligthcurve array.
+            np.save(os.path.join(hpath, bname), np.array(match_lightc))
 
 
 if __name__ == "__main__":
