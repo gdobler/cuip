@@ -499,8 +499,10 @@ class LightCurves(object):
 
 class LightCurves(object):
     """"""
-    def __init__(self, lpath, vpath, rpath, spath, opath):
+    def __init__(self, lpath, vpath, rpath, spath, opath, load_all=True):
         """"""
+        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
+        self.load_all = load_all
         # -- Data paths.
         self.path_lig = lpath
         self.path_var = vpath
@@ -509,6 +511,11 @@ class LightCurves(object):
         self.path_out = opath
         # -- Create metadata df.
         self._metadata(self.path_reg)
+        # --
+        if self.load_all:
+            # -- Load bigoffs
+            # - TO DO
+            pass
 
     def _start(self, text):
         """"""
@@ -570,6 +577,8 @@ class LightCurves(object):
         tstart = self._start("Loading data for {}.".format(night.date()))
         # -- Store night.
         self.night = night
+        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
+        self.load_all = load_all
         # -- Get records for given night.
         mdata = self.meta[self.meta.index == night].to_dict("records")
         # -- If there are no records for the provided night, raise an error.
@@ -579,7 +588,7 @@ class LightCurves(object):
             data = []
             for idx in range(len(mdata)):
                 start, end, fname, tsteps = mdata[idx].values()
-                data.append(self._loadfiles(fname, start, end, load_all))
+                data.append(self._loadfiles(fname, start, end))
             self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
             self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
             self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
@@ -587,13 +596,12 @@ class LightCurves(object):
         self._finish(tstart)
 
 
-    def _loadfiles(self, fname, start, end, load_all):
+    def _loadfiles(self, fname, start, end):
         """Load lightcurves, ons, and offs.
         Args:
             fname (str) - fname suffix (e.g., '0001').
             start (int) - idx for the start of the evening.
             end (int) - idx for the end of the evening.
-            load_all (bool) - load transitions.
         Returns:
             (list) - [lcs, ons, off]
         """
@@ -604,7 +612,7 @@ class LightCurves(object):
         if hasattr(self, "src_ignore"):
             lcs = np.delete(lcs, self.src_ignore, axis=1)
         # -- Load transitions (unless detecting ons/offs).
-        if load_all:
+        if self.load_all:
             fname = "good_ons_{}.npy".format(self.night.date())
             ons = np.load(os.path.join(self.path_var, fname))
             fname = "good_offs_{}.npy".format(self.night.date())
