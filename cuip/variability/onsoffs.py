@@ -217,8 +217,8 @@ def plot_bigoffs(minmax, bigoffs, show=True):
     # -- Scatter bigofff times.
     ax.scatter(np.array(bigoffs)[idx], range(len(bigoffs)), s=3, label="BigOff")
     # -- Formatting.
-    ax.set_ylim(0, tmp.shape[0])
-    ax.set_xlim(0, tmp.shape[1])
+    ax.set_ylim(0, minmax.T.shape[0])
+    ax.set_xlim(0, minmax.T.shape[1])
     ax.set_xticks(np.array(range(8)) * 360)
     ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"])
     ax.set_xlabel("Time")
@@ -264,7 +264,7 @@ class CLI(object):
         else: # -- Run CLI if it exists.
             # -- Get user input.
             text = ("LIGHTCURVES: Select from options below:\n" +
-                    "    [0] One off (plot).\n" +
+                    "    [0] Show plot for current night.\n" +
                     "    [1] Write ons/offs to file for all nights. \n"
                     "Selection: ")
             resp = raw_input(text)
@@ -275,7 +275,7 @@ class CLI(object):
             elif int(resp) == 1:
                 self.write_files()
             else: # -- Else alert user of invalid entry, and recurse.
-                print("LIGHTCURVES: {} is an invalid entry.".format(resp))
+                print("LIGHTCURVES: '{}' is an invalid entry.".format(resp))
                 CLI()
 
 
@@ -289,13 +289,13 @@ class CLI(object):
         """Write ons/offs/bigoffs to file for all nights."""
         # -- Define output path.
         outpath = os.path.join(OUTP, "onsoffs")
-        print("LIGHTCURVES: File to be written to {}".format(outpath))
+        print("LIGHTCURVES: Files to be written to {}".format(outpath))
         sys.stdout.flush()
         # -- Empty list to save bigoff dfs.
         bigoffs_df = []
         # -- Loop over each day in lc.meta.index.
         for dd in lc.meta.index.unique():
-            lc.loadnight(dd)
+            lc.loadnight(dd, load_all=False)
             minmax, good_ons, good_offs, bigoffs = main(lc)
             bigoffs_df.append(bigoffs)
             onfname = "good_ons_{}.npy".format(lc.night.date())
@@ -306,6 +306,7 @@ class CLI(object):
         df = pd.DataFrame(bigoffs_df)
         df["index"] = lc.meta.index
         df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
+        # -- TO DO: Stack data?
 
 
 if __name__ == "__main__":
