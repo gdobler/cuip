@@ -208,48 +208,40 @@ def plot_bigoffs(minmax, bigoffs, show=True):
     """Plot bigoffs."""
     # -- Print status.
     tstart = _start("Plotting residential bigoffs.")
-    # # -- Pull residential idx coords.
-    # res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
-    # # -- Subselect bigoffs for residential buildings.
-    # res_boffs = np.array(bigoffs)[np.array(res_labs) - 1]
-    # # -- Subselect residential minmaxed lightcurves.
-    # tmp = minmax.T[np.array(res_labs) - 1]
-    # # -- Argsort big residential bigoffs.
-    # idx = np.array(res_boffs).argsort()
-    tmp = minmax.T
+    # -- Argsort by bigoff time, to sort plot.
     idx = np.array(bigoffs).argsort()
-    # -- Plot.
+    # -- Create plot.
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(tmp[idx], aspect="auto")
+    # -- Imshow sorted by bigoffs.
+    ax.imshow(minmax.T[idx], aspect="auto")
+    # -- Scatter bigofff times.
     ax.scatter(np.array(bigoffs)[idx], range(len(bigoffs)), s=3, label="BigOff")
+    # -- Formatting.
     ax.set_ylim(0, tmp.shape[0])
     ax.set_xlim(0, tmp.shape[1])
-    ax.set_xlabel("Timesteps")
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"])
+    ax.set_xlabel("Time")
     ax.set_ylabel("Light Sources")
-    ax.set_title("Residential Light Sources w Big Offs ({})".format(lc.night))
+    ax.set_title("Light Sources w Big Offs ({})" \
+        .format(lc.night.date()))
     ax.legend()
     ax.grid(False)
+    ax.xaxis.grid(True, color="w", alpha=0.2)
     plt.tight_layout()
+    # -- Show or save.
     if show:
         plt.show(block=True)
     else:
-        plt.savefig("./pdf/night_{}.png".format(lc.night))
+        if not os.path.exists("./pdf/"):
+            os.mkdir("./pdf")
+        plt.savefig("./pdf/night_{}.png".format(lc.night.date()))
         plt.close("all")
     # -- Print status.
     _finish(tstart)
 
-def main(lc):
-    """"""
-    minmax, mask = preprocess_lightcurves(lc)
-    minmax = median_detrend(minmax)
-    lcs_gd = gaussian_differences(minmax, mask)
-    avg, sig = sigma_clipping(lcs_gd, iters=10)
-    tags_on, tags_off = tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.)
-    good_ons, good_offs = cross_check(minmax, tags_on, tags_off)
-    bigoffs = find_bigoffs(minmax, good_offs)
-    return [minmax, good_ons, good_offs, bigoffs]
 
-def main_(lc):
+def main(lc):
     """"""
     minmax, mask = preprocess_lightcurves(lc)
     minmax = median_detrend(minmax)
@@ -262,22 +254,59 @@ def main_(lc):
     return [minmax, good_ons, good_offs, bigoffs]
 
 
+class CLI(object):
+    def __init__(self):
+        """"""
+        try: # -- Check if light curve object exists (named)
+            lc
+        except: # -- Raise error if not.
+            raise NameError("LIGHTCURVES: lc (obj) is not defined.")
+        else: # -- Run CLI if it exists.
+            # -- Get user input.
+            text = ("LIGHTCURVES: Select from options below:\n" +
+                    "    [0] One off (plot).\n" +
+                    "    [1] Write ons/offs to file for all nights. \n"
+                    "Selection: ")
+            resp = raw_input(text)
+            # -- Run plotting for current night if chosen.
+            if int(resp) == 0:
+                self.one_off()
+            # -- Write ons/offs to file for all nights if chosen.
+            elif int(resp) == 1:
+                self.write_files()
+            else: # -- Else alert user of invalid entry, and recurse.
+                print("LIGHTCURVES: {} is an invalid entry.".format(resp))
+                CLI()
+
+
+    def one_off(self):
+        """Calculate values for night current loaded in lc."""
+        minmax, good_ons, good_offs, bigoffs = main(lc)
+        plot_bigoffs(minmax, bigoffs)
+
+
+    def write_files(self):
+        """Write ons/offs/bigoffs to file for all nights."""
+        # -- Define output path.
+        outpath = os.path.join(OUTP, "onsoffs")
+        print("LIGHTCURVES: File to be written to {}".format(outpath))
+        sys.stdout.flush()
+        # -- Empty list to save bigoff dfs.
+        bigoffs_df = []
+        # -- Loop over each day in lc.meta.index.
+        for dd in lc.meta.index.unique():
+            lc.loadnight(dd)
+            minmax, good_ons, good_offs, bigoffs = main(lc)
+            bigoffs_df.append(bigoffs)
+            onfname = "good_ons_{}.npy".format(lc.night.date())
+            offname = "good_offs_{}.npy".format(lc.night.date())
+            np.save(os.path.join(outpath, onfname), good_ons)
+            np.save(os.path.join(outpath, offname), good_offs)
+            plot_bigoffs(minmax, bigoffs, False)
+        df = pd.DataFrame(bigoffs_df)
+        df["index"] = lc.meta.index
+        df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
+
+
 if __name__ == "__main__":
-    # -- Detect ons/offs and bigoffs and plot the results.
-    minmax, good_ons, good_offs, bigoffs = main_(lc)
-    plot_bigoffs(minmax, bigoffs)
-    # # -- Run all detections.
-    # outpath = os.path.join(OUTP, "onsoffs")
-    # bigoffs_df = []
-    # for dd in lc.meta.index:
-    #     lc.loadnight(dd)
-    #     minmax, good_ons, good_offs, bigoffs = main(lc)
-    #     bigoffs_df.append(bigoffs)
-    #     onfname = "good_ons_{}.npy".format(lc.night)
-    #     offname = "good_offs_{}.npy".format(lc.night)
-    #     np.save(os.path.join(outpath, onfname), good_ons)
-    #     np.save(os.path.join(outpath, offname), good_offs)
-    #     plot_bigoffs(minmax, bigoffs, False)
-    # df = pd.DataFrame(bigoffs_df)
-    # df["index"] = lc.meta.index
-    # df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
+    CLI()
