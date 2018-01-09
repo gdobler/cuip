@@ -11,25 +11,34 @@ from scipy.ndimage.filters import gaussian_filter as gf
 
 plt.style.use("ggplot")
 
+def _start(text):
+    """"""
+    print("LIGHTCURVES: {}".format(text))
+    sys.stdout.flush()
+    return time.time()
+
+
+def _finish(tstart):
+    """"""
+    print("LIGHTCURVES: Complete ({:.2f}s)".format(time.time() - tstart))
+
 
 def preprocess_lightcurves(lc, width=30):
-    """Gaussian filter (sigma=30) each lightcurve in a given night. Median
-    detrend the resulting lightcurves and min-max.
+    """Gaussian filter (sigma=30) each lightcurve in a given night and min-max.
     Args:
         lc (obj) - LightCurves object.
     Returns:
         minmax (array) - prprocessed array of light curves.
         maks (array) - mask for preprocessed array of light curves.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Preprocessing light curves.                           ")
-    sys.stdout.flush()
-    mask = gf((lc.src_lightc > -9999).astype(float), (width, 0)) > 0.9999
+    # -- Print status.
+    tstart = _start("Preprocessing light curves.")
+    mask = gf((lc.lcs > -9999).astype(float), (width, 0)) > 0.9999
     msk_sm = gf(mask.astype(float), (width, 0))
-    lcs_sm = gf(lc.src_lightc * mask, (width, 0)) / (msk_sm + (msk_sm == 0))
+    lcs_sm = gf(lc.lcs * mask, (width, 0)) / (msk_sm + (msk_sm == 0))
     minmax = MinMaxScaler().fit_transform(lcs_sm)
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return [minmax, mask]
 
 
@@ -45,6 +54,17 @@ def median_detrend(minmax, width=30):
     return dtrend.T
 
 
+def high_pass_subtraction(minmax, width=360):
+    """"""
+    # -- Print status.
+    tstart = _start("High pass subtraction.")
+    lcs_hp = gf(minmax, (width, 0))
+    lcs_diff = minmax - lcs_hp
+    # -- Print status.
+    _finish(tstart)
+    return lcs_diff
+
+
 def gaussian_differences(minmax, mask, delta=2):
     """Calculate gaussian differences in light curves.
     Args:
@@ -54,15 +74,14 @@ def gaussian_differences(minmax, mask, delta=2):
     Returns:
         lcs_gd (array) - array of light curve gaussian differences.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Calculating gaussian differences.                     ")
-    sys.stdout.flush()
+    # -- Print status.
+    tstart = _start("Calculating gaussian differences.")
     lcs_gd = np.ma.zeros(minmax.shape, dtype=minmax.dtype)
     lcs_gd[delta // 2: -delta // 2] = minmax[delta:] - minmax[:-delta]
     lcs_gd.mask = np.zeros_like(mask)
     lcs_gd.mask[delta // 2: -delta // 2] = ~(mask[delta:] * mask[:-delta])
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return lcs_gd
 
 
@@ -76,21 +95,20 @@ def sigma_clipping(lcs_gd, sig_clip=2, iters=10):
         avg (array) - average values.
         sig (array) - standard deviation values.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Sigma clipping.                                       ")
-    sys.stdout.flush()
+    # -- Print status.
+    tstart = _start("Sigma clipping.")
     tmsk = lcs_gd.mask.copy()
     for _ in range(iters):
         avg = lcs_gd.mean(0)
         sig = lcs_gd.std(0)
         lcs_gd.mask = np.abs(lcs_gd - avg) > sig_clip * sig
     lcs_gd.mask = tmsk
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return [avg, sig]
 
 
-def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=0.):
+def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.):
     """Tag potential ons and offs.
     Args:
         lcs_gd (array) - array of light curve gaussian differences.
@@ -101,9 +119,8 @@ def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=0.):
         tags_on (array) - array of potential ons.
         tags_offs (array) - array of potential offs.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Tag ons and offs.                                     ")
-    sys.stdout.flush()
+    # -- Print status.
+    tstart = _start("Tag ons and offs.")
     tags_on = np.zeros(lcs_gd.shape, dtype=bool)
     tags_off = np.zeros(lcs_gd.shape, dtype=bool)
     # -- Pos values, higher than prev and next value, and are not masked.
@@ -116,8 +133,8 @@ def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=0.):
                      (lcs_gd[1:-1] < lcs_gd[2:]) & \
                      (lcs_gd[1:-1] < lcs_gd[:-2]) & \
                      ~lcs_gd.mask[1:-1]
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return [tags_on, tags_off]
 
 
@@ -133,9 +150,8 @@ def cross_check(minmax, tags_on, tags_off, width=30, sig=2):
         good_ons (array) - array of good ons.
         good_offs (array) - array of good offs.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Cross check ons and offs.                             ")
-    sys.stdout.flush()
+    # -- Print status.
+    tstart = _start("Cross check ons and offs.")
     # -- Set up filters
     mean_diff = ((np.arange(2 * width) >= width) * 2 - 1) / float(width)
     mean_left = 1.0 * (np.arange(2 * width) < width) / float(width)
@@ -151,8 +167,8 @@ def cross_check(minmax, tags_on, tags_off, width=30, sig=2):
     good_arr = lcs_md > sig * lcs_std
     good_ons = tags_on & good_arr
     good_offs = tags_off & good_arr
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return [good_ons, good_offs]
 
 
@@ -164,9 +180,8 @@ def find_bigoffs(minmax, good_offs):
     Returns:
         bigoffs (list) - timestep of bigoff for each source.
     """
-    tstart = time.time()
-    print("LIGHTCURVES: Calculate bigoffs.                                    ")
-    sys.stdout.flush()
+    # -- Print status.
+    tstart = _start("Calculate bigoffs.")
     bigoffs = []
     # -- For each lightcurve and corresponding set of offs.
     for src, offs in zip(minmax.T, good_offs.T):
@@ -184,38 +199,44 @@ def find_bigoffs(minmax, good_offs):
                 if mm > bigoff[1]:
                     bigoff = (ii, mm)
             bigoffs.append(bigoff[0])
-    print("LIGHTCURVES: Complete ({:.2f}s)                                   " \
-        .format(time.time() - tstart))
+    # -- Print status.
+    _finish(tstart)
     return bigoffs
 
 
 def plot_bigoffs(minmax, bigoffs, show=True):
     """Plot bigoffs."""
-    print("Plotting residential bigoffs.")
-    sys.stdout.flush()
-    # -- Pull residential idx coords.
-    res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
-    # -- Subselect bigoffs for residential buildings.
-    res_boffs = np.array(bigoffs)[np.array(res_labs) - 1]
-    # -- Subselect residential minmaxed lightcurves.
-    tmp = minmax.T[np.array(res_labs) - 1]
-    # -- Argsort big residential bigoffs.
-    idx = np.array(res_boffs).argsort()
+    # -- Print status.
+    tstart = _start("Plotting residential bigoffs.")
+    # # -- Pull residential idx coords.
+    # res_labs = filter(lambda x: lc.coords_cls[x] == 1, lc.coords_cls.keys())
+    # # -- Subselect bigoffs for residential buildings.
+    # res_boffs = np.array(bigoffs)[np.array(res_labs) - 1]
+    # # -- Subselect residential minmaxed lightcurves.
+    # tmp = minmax.T[np.array(res_labs) - 1]
+    # # -- Argsort big residential bigoffs.
+    # idx = np.array(res_boffs).argsort()
+    tmp = minmax.T
+    idx = np.array(bigoffs).argsort()
     # -- Plot.
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(tmp[idx])
-    ax.scatter(np.array(res_boffs)[idx], range(len(res_boffs)), s=3, label="BigOff")
+    ax.imshow(tmp[idx], aspect="auto")
+    ax.scatter(np.array(bigoffs)[idx], range(len(bigoffs)), s=3, label="BigOff")
     ax.set_ylim(0, tmp.shape[0])
     ax.set_xlim(0, tmp.shape[1])
-    ax.set_yticks([])
     ax.set_xlabel("Timesteps")
     ax.set_ylabel("Light Sources")
     ax.set_title("Residential Light Sources w Big Offs ({})".format(lc.night))
     ax.legend()
+    ax.grid(False)
+    plt.tight_layout()
     if show:
         plt.show(block=True)
     else:
         plt.savefig("./pdf/night_{}.png".format(lc.night))
+        plt.close("all")
+    # -- Print status.
+    _finish(tstart)
 
 def main(lc):
     """"""
@@ -223,28 +244,40 @@ def main(lc):
     minmax = median_detrend(minmax)
     lcs_gd = gaussian_differences(minmax, mask)
     avg, sig = sigma_clipping(lcs_gd, iters=10)
-    tags_on, tags_off = tag_ons_offs(lcs_gd, avg, sig, sig_peaks=3.)
+    tags_on, tags_off = tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.)
+    good_ons, good_offs = cross_check(minmax, tags_on, tags_off)
+    bigoffs = find_bigoffs(minmax, good_offs)
+    return [minmax, good_ons, good_offs, bigoffs]
+
+def main_(lc):
+    """"""
+    minmax, mask = preprocess_lightcurves(lc)
+    minmax = median_detrend(minmax)
+    lcs_diff = high_pass_subtraction(minmax)
+    lcs_gd = gaussian_differences(lcs_diff, mask)
+    avg, sig = sigma_clipping(lcs_gd, iters=10)
+    tags_on, tags_off = tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.)
     good_ons, good_offs = cross_check(minmax, tags_on, tags_off)
     bigoffs = find_bigoffs(minmax, good_offs)
     return [minmax, good_ons, good_offs, bigoffs]
 
 
 if __name__ == "__main__":
-    # # -- Detect ons/offs and bigoffs and plot the results.
-    # minmax, good_ons, good_offs, bigoffs = main(lc)
-    # plot_bigoffs(minmax, bigoffs)
-    # -- Run all detections.
-    outpath = os.path.join(OUTP, "onsoffs")
-    bigoffs_df = []
-    for dd in lc.meta.index:
-        lc.loadnight(dd)
-        minmax, good_ons, good_offs, bigoffs = main(lc)
-        bigoffs_df.append(bigoffs)
-        onfname = "good_ons_{}.npy".format(lc.night)
-        offname = "good_offs_{}.npy".format(lc.night)
-        np.save(os.path.join(outpath, onfname), good_ons)
-        np.save(os.path.join(outpath, offname), good_offs)
-        plot_bigoffs(minmax, bigoffs, False)
-    df = pd.DataFrame(bigoffs_df)
-    df["index"] = lc.meta.index
-    df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
+    # -- Detect ons/offs and bigoffs and plot the results.
+    minmax, good_ons, good_offs, bigoffs = main_(lc)
+    plot_bigoffs(minmax, bigoffs)
+    # # -- Run all detections.
+    # outpath = os.path.join(OUTP, "onsoffs")
+    # bigoffs_df = []
+    # for dd in lc.meta.index:
+    #     lc.loadnight(dd)
+    #     minmax, good_ons, good_offs, bigoffs = main(lc)
+    #     bigoffs_df.append(bigoffs)
+    #     onfname = "good_ons_{}.npy".format(lc.night)
+    #     offname = "good_offs_{}.npy".format(lc.night)
+    #     np.save(os.path.join(outpath, onfname), good_ons)
+    #     np.save(os.path.join(outpath, offname), good_offs)
+    #     plot_bigoffs(minmax, bigoffs, False)
+    # df = pd.DataFrame(bigoffs_df)
+    # df["index"] = lc.meta.index
+    # df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
