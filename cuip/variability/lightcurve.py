@@ -4,6 +4,7 @@ import os
 import sys
 import time
 import cPickle
+import warnings
 import datetime
 import numpy as np
 import pandas as pd
@@ -496,6 +497,129 @@ class LightCurves(object):
             .format(time.time() - tstart))
 
 
+class LightCurves(object):
+    """"""
+    def __init__(self, lpath, vpath, rpath, spath, opath):
+        """"""
+        # -- Data paths.
+        self.path_lig = lpath
+        self.path_var = vpath
+        self.path_reg = rpath
+        self.path_sup = spath
+        self.path_out = opath
+        # -- Create metadata df.
+        self._metadata(self.path_reg)
+
+    def _start(self, text):
+        """"""
+        print("LIGHTCURVES: {}".format(text))
+        sys.stdout.flush()
+        return time.time()
+
+
+    def _finish(self, tstart):
+        """"""
+        print("LIGHTCURVES: Complete ({:.2f}s)".format(time.time() - tstart))
+
+
+    def _metadata(self, rpath, tspan=[(21, 0), (4, 30)]):
+        """Load all registration files and concatenate to pandas df. Find
+        indices for every day in corresponding on/off/lightcurve files.
+        Args:
+            tspan (list) - tuples defining span of each day (hour, minute).
+        """
+        # -- Print status.
+        tstart = self._start("Creating metadata.")
+        # -- Create start & end times to subselect.
+        stime, etime = [pd.datetime(9, 9, 9, *tt).time() for tt in tspan]
+        # -- Store timedelta used to shift times to a single night.
+        self.timedelta = pd.to_timedelta(str(etime))
+        # -- Empty list to append dfs, and cols to parse.
+        dfs, cols = [], ["timestamp"]
+        # -- Create metadata dfs from each registration file.
+        for rfile in sorted(os.listdir(rpath)):
+            # -- Read the current registration file.
+            rfilep = os.path.join(rpath, rfile)
+            reg = pd.read_csv(rfilep, parse_dates=cols, usecols=cols)
+            # -- Subselect for start and end times.
+            reg = reg[(reg.timestamp.dt.time > stime) |
+                      (reg.timestamp.dt.time < etime)].reset_index()
+            # -- Shift data so each continuous night shares a common date.
+            reg.timestamp = reg.timestamp - self.timedelta
+            # -- Create df with start, end, fname, and # of timesteps.
+            gby = reg.groupby(reg.timestamp.dt.date)["index"]
+            meta = pd.concat([gby.min(), (gby.max() + 1)], axis=1)
+            meta.columns = ["start", "end"]
+            meta["fname"] = rfile[-8:-4]
+            meta["timesteps"] = meta.end - meta.start
+            meta.index = pd.to_datetime(meta.index)
+            dfs.append(meta)
+        # -- Concatenate metadata dataframe.
+        self.meta = pd.concat(dfs)
+        # -- Print status
+        self._finish(tstart)
+
+
+    def loadnight(self, night, load_all=True):
+        """Load a set of lightcurves, ons, and offs.
+        Args:
+            night (datetime) - night to load data for.
+            load_all (bool) - load transitions?
+        """
+        # -- Print status.
+        tstart = self._start("Loading data for {}.".format(night.date()))
+        # -- Store night.
+        self.night = night
+        # -- Get records for given night.
+        mdata = self.meta[self.meta.index == night].to_dict("records")
+        # -- If there are no records for the provided night, raise an error.
+        if len(mdata) == 0:
+            raise ValueError("{} is not a valid night.".format(night.date()))
+        else:
+            data = []
+            for idx in range(len(mdata)):
+                start, end, fname, tsteps = mdata[idx].values()
+                data.append(self._loadfiles(fname, start, end, load_all))
+            self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
+            self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
+            self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
+        # -- Print status
+        self._finish(tstart)
+
+
+    def _loadfiles(self, fname, start, end, load_all):
+        """Load lightcurves, ons, and offs.
+        Args:
+            fname (str) - fname suffix (e.g., '0001').
+            start (int) - idx for the start of the evening.
+            end (int) - idx for the end of the evening.
+            load_all (bool) - load transitions.
+        Returns:
+            (list) - [lcs, ons, off]
+        """
+        # -- Load lightcurves.
+        path = os.path.join(self.path_lig, "light_curves_{}.npy".format(fname))
+        lcs = np.load(path).mean(-1)[start: end]
+        # -- Remove sources that aren't in all imgs if self.src_ignore exists.
+        if hasattr(self, "src_ignore"):
+            lcs = np.delete(lcs, self.src_ignore, axis=1)
+        # -- Load transitions (unless detecting ons/offs).
+        if load_all:
+            fname = "good_ons_{}.npy".format(self.night.date())
+            ons = np.load(os.path.join(self.path_var, fname))
+            fname = "good_offs_{}.npy".format(self.night.date())
+            off = np.load(os.path.join(self.path_var, fname))
+            # -- As above.
+            if hasattr(self, "src_ignore"):
+                ons = np.delete(ons, self.src_ignore, axis=1)
+                off = np.delete(off, self.src_ignore, axis=1)
+        # -- Else set to empty lists.
+        else:
+            ons, off = [], []
+        # -- Return loaded data.
+        return [lcs, ons, off]
+
+
 if __name__ == "__main__":
     # -- Load environmental variables.
     LIGH = os.environ["LIGHTCURVES"]
@@ -504,10 +628,11 @@ if __name__ == "__main__":
     SUPP = os.environ["SUPPPATH"]
     OUTP = os.environ["OUTPATH"]
 
-    # LIGH = os.path.join(OUTP, "histogram_matching")
+    LIGH = os.path.join(OUTP, "histogram_matching")
+    VARI = os.path.join(OUTP, "onsoffs")
 
     # -- Create LightCurve object.
     lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
 
     # -- Load a specific night for plotting.
-    lc.loadnight(pd.datetime(2013, 11, 15).date())
+    lc.loadnight(pd.datetime(2014, 6, 16), load_all=False)
