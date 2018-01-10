@@ -586,12 +586,21 @@ class LightCurves(object):
             raise ValueError("{} is not a valid night.".format(night.date()))
         else:
             data = []
+            # -- For each metadata value.
             for idx in range(len(mdata)):
+                # -- Grab start idx, end idx, fname, and timesteps.
                 start, end, fname, tsteps = mdata[idx].values()
+                # -- Load lcs, ons, and offs and append to data.
                 data.append(self._loadfiles(fname, start, end))
+            # -- Concatenate all like files and store.
             self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
             self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
             self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
+            # -- Backfill -9999 in lcs (up to 3 consecutive).
+            self.lcs = pd.DataFrame(self.lcs).replace(-9999, np.nan) \
+                .fillna(method="bfill", limit=3, axis=0) \
+                .fillna(method="ffill", limit=3, axis=0) \
+                .replace(np.nan, -9999).as_matrix()
         # -- Print status
         self._finish(tstart)
 
