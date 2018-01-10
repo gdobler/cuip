@@ -24,11 +24,11 @@ def _finish(tstart):
 
 
 def preprocess_lightcurves(lc, width=30):
-    """Gaussian filter (sigma=30) each lightcurve in a given night and min-max.
+    """Gaussian filter (sigma=30) each lightcurve in a given night.
     Args:
         lc (obj) - LightCurves object.
     Returns:
-        minmax (array) - prprocessed array of light curves.
+        lcs_sm (array) - prprocessed array of light curves.
         maks (array) - mask for preprocessed array of light curves.
     """
     # -- Print status.
@@ -36,10 +36,24 @@ def preprocess_lightcurves(lc, width=30):
     mask = gf((lc.lcs > -9999).astype(float), (width, 0)) > 0.9999
     msk_sm = gf(mask.astype(float), (width, 0))
     lcs_sm = gf(lc.lcs * mask, (width, 0)) / (msk_sm + (msk_sm == 0))
-    minmax = MinMaxScaler().fit_transform(lcs_sm)
     # -- Print status.
     _finish(tstart)
-    return [minmax, mask]
+    return [lcs_sm, mask]
+
+
+def min_max_lightcurves(lcs):
+    """Minmax lightcurves.
+    Args:
+        lcs (array) - light curves.
+    Returns:
+        minmax (array) - preprocessed array of light curves.
+    """
+    # -- Print status.
+    tstart = _start("Minmaxing light curves.")
+    minmax = MinMaxScaler().fit_transform(lcs)
+    # -- Print status.
+    _finish(tstart)
+    return(minmax)
 
 
 def median_detrend(minmax, width=30):
@@ -50,7 +64,15 @@ def median_detrend(minmax, width=30):
     Returns:
         dtrend (array)
     """
-    dtrend = minmax.T - gf(np.median(minmax, axis=1), width)
+    # -- Print status.
+    tstart = _start("Detrending light curves.")
+    med = np.median(minmax, axis=1)
+    mask = gf((med > 0).astype(float), width) > 0.9999
+    msk_sm = gf(mask.astype(float), width)
+    med_sm = gf(med * mask, width) / (msk_sm + (msk_sm == 0))
+    dtrend = minmax.T - med_sm
+    # -- Print status.
+    _finish(tstart)
     return dtrend.T
 
 
@@ -243,7 +265,8 @@ def plot_bigoffs(minmax, bigoffs, show=True):
 
 def main(lc):
     """"""
-    minmax, mask = preprocess_lightcurves(lc)
+    lcs_sm, mask = preprocess_lightcurves(lc)
+    minmax = min_max_lightcurves(lcs_sm)
     minmax = median_detrend(minmax)
     lcs_diff = high_pass_subtraction(minmax)
     lcs_gd = gaussian_differences(lcs_diff, mask)
@@ -293,10 +316,12 @@ class CLI(object):
         sys.stdout.flush()
         # -- Empty list to save bigoff dfs.
         bigoffs_df = []
-        # -- Loop over each day in lc.meta.index.
+        minmaxs = []
+        # -- Loop over each unique day in lc.meta.index.
         for dd in lc.meta.index.unique():
             lc.loadnight(dd, load_all=False)
             minmax, good_ons, good_offs, bigoffs = main(lc)
+            minmaxs.append(minmax)
             bigoffs_df.append(bigoffs)
             onfname = "good_ons_{}.npy".format(lc.night.date())
             offname = "good_offs_{}.npy".format(lc.night.date())
@@ -304,10 +329,10 @@ class CLI(object):
             np.save(os.path.join(outpath, offname), good_offs)
             plot_bigoffs(minmax, bigoffs, False)
         df = pd.DataFrame(bigoffs_df)
-        df["index"] = lc.meta.index
+        df["index"] = lc.meta.index.unique()
         df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
-        # -- TO DO: Stack data?
-
+        np.save(os.path.join(outpath, "minmax.npy"), np.array(minmaxs))
+        
 
 if __name__ == "__main__":
     CLI()
