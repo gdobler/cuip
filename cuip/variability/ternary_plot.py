@@ -2,12 +2,13 @@
 import ternary
 import numpy as np
 import matplotlib.pyplot as plt
+from sklearn.preprocessing import MinMaxScaler
 
 plt.style.use("ggplot")
 
 def color_point(x, y, z, scale):
     """Dummy function to create heatmap (background)."""
-    val = 235. / 255
+    val = 225. / 255
     return (val, val, val, 1.)
 
 def generate_heatmap_data(scale=5):
