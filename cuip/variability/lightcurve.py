@@ -513,9 +513,9 @@ class LightCurves(object):
         self._metadata(self.path_reg)
         # --
         if self.load_all:
-            # -- Load bigoffs
-            # - TO DO
-            pass
+            path_boffs = os.path.join(vpath, "bigoffs.pkl")
+            self.lc_bigoffs = pd.read_pickle(path_boffs).set_index("index")
+
 
     def _start(self, text):
         """"""
@@ -567,11 +567,12 @@ class LightCurves(object):
         self._finish(tstart)
 
 
-    def loadnight(self, night, load_all=True):
+    def loadnight(self, night, load_all=True, lc_mean=True):
         """Load a set of lightcurves, ons, and offs.
         Args:
             night (datetime) - night to load data for.
             load_all (bool) - load transitions?
+            lc_mean (bool) - take the mean across color channels?
         """
         # -- Print status.
         tstart = self._start("Loading data for {}.".format(night.date()))
@@ -591,32 +592,37 @@ class LightCurves(object):
                 # -- Grab start idx, end idx, fname, and timesteps.
                 start, end, fname, tsteps = mdata[idx].values()
                 # -- Load lcs, ons, and offs and append to data.
-                data.append(self._loadfiles(fname, start, end))
+                data.append(self._loadfiles(fname, start, end, lc_mean))
             # -- Concatenate all like files and store.
             self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
             self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
             self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
-            # -- Backfill -9999 in lcs (up to 3 consecutive).
-            self.lcs = pd.DataFrame(self.lcs).replace(-9999, np.nan) \
-                .fillna(method="bfill", limit=3, axis=0) \
-                .fillna(method="ffill", limit=3, axis=0) \
-                .replace(np.nan, -9999).as_matrix()
+            if lc_mean: # -- Only backfill/forward fill if taking mean.
+                # -- Backfill/forward fill -9999 in lcs (up to 3 consecutive).
+                self.lcs = pd.DataFrame(self.lcs).replace(-9999, np.nan) \
+                    .fillna(method="bfill", limit=3, axis=0) \
+                    .fillna(method="ffill", limit=3, axis=0) \
+                    .replace(np.nan, -9999).as_matrix()
         # -- Print status
         self._finish(tstart)
 
 
-    def _loadfiles(self, fname, start, end):
+    def _loadfiles(self, fname, start, end, lc_mean=True):
         """Load lightcurves, ons, and offs.
         Args:
             fname (str) - fname suffix (e.g., '0001').
             start (int) - idx for the start of the evening.
             end (int) - idx for the end of the evening.
+            lc_mean (bool) - take the mean across color channels?
         Returns:
             (list) - [lcs, ons, off]
         """
         # -- Load lightcurves.
         path = os.path.join(self.path_lig, "light_curves_{}.npy".format(fname))
-        lcs = np.load(path).mean(-1)[start: end]
+        if lc_mean:
+            lcs = np.load(path).mean(-1)[start: end]
+        else:
+            lcs = np.load(path)[start: end]
         # -- Remove sources that aren't in all imgs if self.src_ignore exists.
         if hasattr(self, "src_ignore"):
             lcs = np.delete(lcs, self.src_ignore, axis=1)
@@ -652,4 +658,4 @@ if __name__ == "__main__":
     lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
 
     # -- Load a specific night for plotting.
-    lc.loadnight(pd.datetime(2014, 6, 16), load_all=False)
+    lc.loadnight(pd.datetime(2014, 6, 16))
