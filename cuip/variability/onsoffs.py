@@ -332,7 +332,7 @@ class CLI(object):
         df["index"] = lc.meta.index.unique()
         df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
         np.save(os.path.join(outpath, "minmax.npy"), np.array(minmaxs))
-        
+
 
 if __name__ == "__main__":
     CLI()
