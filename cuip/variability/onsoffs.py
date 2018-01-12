@@ -68,17 +68,21 @@ def median_detrend(minmax, width=30):
     """
     # -- Print status.
     tstart = _start("Detrending light curves.")
-    # -- Calculate smoothed median.
-    med = np.median(minmax, axis=1)
-    msk_sm = gf((~minmax.mask).astype(float)[:, 0], width)
-    med_sm = gf(med * ~minmax.mask[:, 0], width) / (msk_sm + (msk_sm == 0))
-    med_sm = np.ma.array(med_sm, mask=minmax.mask[:, 0])
-    # -- Model fit.
-    mev = np.vstack([med_sm, np.ones(med_sm.shape)]).T
-    fit = np.matmul(np.linalg.inv(np.matmul(mev.T, mev)),
-                    np.matmul(mev.T, minmax))
-    model = med_sm * fit[0].reshape(-1, 1) + fit[1].reshape(-1, 1)
-    dtrend = minmax.T - model
+    # -- Check if full dataset is masked:
+    if minmax.mask.all() != True:
+        # -- Calculate smoothed median.
+        med = np.median(minmax, axis=1)
+        msk_sm = gf((~minmax.mask).astype(float)[:, 0], width)
+        med_sm = gf(med * ~minmax.mask[:, 0], width) / (msk_sm + (msk_sm == 0))
+        med_sm = np.ma.array(med_sm, mask=minmax.mask[:, 0])
+        # -- Model fit.
+        mev = np.vstack([med_sm, np.ones(med_sm.shape)]).T
+        fit = np.matmul(np.linalg.inv(np.matmul(mev.T, mev)),
+                        np.matmul(mev.T, minmax))
+        model = med_sm * fit[0].reshape(-1, 1) + fit[1].reshape(-1, 1)
+        dtrend = minmax.T - model
+    else:
+        dtrend = minmax.T  # -- Pass masked array.
     # -- Print status.
     _finish(tstart)
     return dtrend.T
@@ -225,7 +229,7 @@ def find_bigoffs(minmax, good_offs):
             idx = [ix for ix, boo in enumerate(offs) if boo == True]
             # -- For each idx, check mean before and after.
             for ii in idx:
-                mm = np.nanmean(src[:ii]) - np.nanmean(src[ii:])
+                mm = np.mean(src[:ii]) - np.mean(src[ii:])
                 # -- Keep max.
                 if mm > bigoff[1]:
                     bigoff = (ii, mm)
@@ -235,10 +239,10 @@ def find_bigoffs(minmax, good_offs):
     return bigoffs
 
 
-def plot_bigoffs(minmax, bigoffs, show=True):
+def plot_bigoffs(minmax, bigoffs, show=True, fname="./pdf/night_{}.png"):
     """Plot bigoffs."""
     # -- Print status.
-    tstart = _start("Plotting residential bigoffs.")
+    tstart = _start("Plotting bigoffs.")
     # -- Argsort by bigoff time, to sort plot.
     idx = np.array(bigoffs).argsort()
     # -- Create plot.
@@ -266,7 +270,7 @@ def plot_bigoffs(minmax, bigoffs, show=True):
     else:
         if not os.path.exists("./pdf/"):
             os.mkdir("./pdf")
-        plt.savefig("./pdf/night_{}.png".format(lc.night.date()))
+        plt.savefig(fname.format(lc.night.date()))
         plt.close("all")
     # -- Print status.
     _finish(tstart)
@@ -283,7 +287,7 @@ def main(lc):
     tags_on, tags_off = tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.)
     good_ons, good_offs = cross_check(dtrend, tags_on, tags_off)
     bigoffs = find_bigoffs(dtrend, good_offs)
-    return [dtrend, good_ons, good_offs, bigoffs]
+    return [dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs]
 
 
 class CLI(object):
@@ -313,7 +317,7 @@ class CLI(object):
 
     def one_off(self):
         """Calculate values for night current loaded in lc."""
-        dtrend, good_ons, good_offs, bigoffs = main(lc)
+        dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs = main(lc)
         plot_bigoffs(dtrend, bigoffs)
 
 
@@ -329,7 +333,7 @@ class CLI(object):
         # -- Loop over each unique day in lc.meta.index.
         for dd in lc.meta.index.unique():
             lc.loadnight(dd, load_all=False)
-            dtrend, good_ons, good_offs, bigoffs = main(lc)
+            dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs = main(lc)
             lcs.append(dtrend)
             bigoffs_df.append(bigoffs)
             onfname = "good_ons_{}.npy".format(lc.night.date())
@@ -337,6 +341,8 @@ class CLI(object):
             np.save(os.path.join(outpath, onfname), good_ons)
             np.save(os.path.join(outpath, offname), good_offs)
             plot_bigoffs(dtrend, bigoffs, False)
+            plot_bigoffs(lcs_diff, bigoffs, False, "./pdf/night_hp_{}.png")
+            plot_bigoffs(lcs_gd, bigoffs, False, "./pdf/night_gd_{}.png")
         df = pd.DataFrame(bigoffs_df)
         df["index"] = lc.meta.index.unique()
         df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
@@ -345,13 +351,3 @@ class CLI(object):
 
 if __name__ == "__main__":
     CLI()
-
-num = 3000
-# num = 2000
-plt.plot(dtrend[:, idx][:, num], label="dtrend")
-plt.plot(lcs_diff[:, idx][:, num], label="high-pass subtraction")
-plt.plot(gf(lcs_gd[:, idx][:, num], 3), label="gaussian diff.")
-plt.axhline(avg[idx][num] + sig[idx][num] * 10)
-plt.axhline(avg[idx][num] - sig[idx][num] * 10)
-plt.legend()
-plt.show()
