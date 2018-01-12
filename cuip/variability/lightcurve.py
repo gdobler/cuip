@@ -501,8 +501,6 @@ class LightCurves(object):
     """"""
     def __init__(self, lpath, vpath, rpath, spath, opath, load_all=True):
         """"""
-        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
-        self.load_all = load_all
         # -- Data paths.
         self.path_lig = lpath
         self.path_var = vpath
@@ -511,10 +509,13 @@ class LightCurves(object):
         self.path_out = opath
         # -- Create metadata df.
         self._metadata(self.path_reg)
-        # --
-        if self.load_all:
-            path_boffs = os.path.join(vpath, "bigoffs.pkl")
-            self.lc_bigoffs = pd.read_pickle(path_boffs).set_index("index")
+        # -- Create data dictionaries.
+        wpath = os.path.join(spath, "window_labels.out")
+        bblpath = os.path.join(spath, "12_3_14_bblgrid_clean.npy")
+        plutopath = os.path.join(spath, "pluto", "MN.csv")
+        self._data_dictionaries(wpath, bblpath, plutopath)
+        if load_all:
+            self._load_dtrend()
 
 
     def _start(self, text):
@@ -567,43 +568,66 @@ class LightCurves(object):
         self._finish(tstart)
 
 
-    def loadnight(self, night, load_all=True, lc_mean=True):
-        """Load a set of lightcurves, ons, and offs.
-        Args:
-            night (datetime) - night to load data for.
-            load_all (bool) - load transitions?
-            lc_mean (bool) - take the mean across color channels?
-        """
+    def _load_dtrend(self):
+        """"""
         # -- Print status.
-        tstart = self._start("Loading data for {}.".format(night.date()))
-        # -- Store night.
-        self.night = night
-        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
-        self.load_all = load_all
-        # -- Get records for given night.
-        mdata = self.meta[self.meta.index == night].to_dict("records")
-        # -- If there are no records for the provided night, raise an error.
-        if len(mdata) == 0:
-            raise ValueError("{} is not a valid night.".format(night.date()))
-        else:
-            data = []
-            # -- For each metadata value.
-            for idx in range(len(mdata)):
-                # -- Grab start idx, end idx, fname, and timesteps.
-                start, end, fname, tsteps = mdata[idx].values()
-                # -- Load lcs, ons, and offs and append to data.
-                data.append(self._loadfiles(fname, start, end, lc_mean))
-            # -- Concatenate all like files and store.
-            self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
-            self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
-            self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
-            if lc_mean: # -- Only backfill/forward fill if taking mean.
-                # -- Backfill/forward fill -9999 in lcs (up to 3 consecutive).
-                self.lcs = pd.DataFrame(self.lcs).replace(-9999, np.nan) \
-                    .fillna(method="bfill", limit=3, axis=0) \
-                    .fillna(method="ffill", limit=3, axis=0) \
-                    .replace(np.nan, -9999).as_matrix()
-        # -- Print status
+        tstart = self._start("Loading dtrended light curves.")
+        # -- Loading the bigoff.pkl.
+        self.lcs_dtrend = np.load(os.path.join(self.path_var, "med_detrended_lcs.npy"))
+        # -- Load mask counts and merge into self.meta.
+        dd = [dd for dd in self.meta.index.unique()]
+        ma = [ii.mask.sum() for ii in lcs]
+        df = pd.DataFrame(np.array([dd, ma]).T, columns=["date", "nmask"]) \
+            .set_index("date")
+        self.meta = self.meta.merge(df, left_index=True, right_index=True)
+        # -- Print status.
+        self._finish(tstart)
+
+
+    def _data_dictionaries(self, wpath, bblpath, plutopath):
+        """"""
+        # -- Print status.
+        tstart = self._start("Creating data dictionaries.")
+        # -- Create building class data dictionary.
+        ind = ["F"]
+        mix = ["RM", "RR", "RX"]
+        com = ["J", "K", "L", "O", "RA", "RB", "RC", "RI"]
+        res = ["B", "C", "D", "N", "R1", "R2", "R3", "R4", "S"]
+        mis = ["G", "H", "I", "M", "P", "Q", "T", "U", "V", "W", "Y", "Z"]
+        self.dd_bldgclss = {val: ii + 1 for ii, ll in
+                            enumerate([res, com, mix, ind, mis]) for val in ll}
+        # -- Load light source matrix.
+        nrow, ncol, buff = 2160, 4096, 20
+        self.matrix_sources = np.zeros((nrow, ncol), dtype=bool)
+        self.matrix_sources[buff: -buff, buff:-buff] = np.fromfile(wpath, int) \
+            .reshape(nrow - 2 * buff, ncol -2 * buff).astype(bool)
+        # -- Create label matrix.
+        self.matrix_labels = ndm.label(self.matrix_sources)[0]
+        # -- TO DO: Replace values to be ignored.
+        # -- Find coordinates for each light source.
+        labels = range(1, self.matrix_labels.max() + 1)
+        xy = ndm.center_of_mass(self.matrix_sources, self.matrix_labels, labels)
+        self.coords = {self.matrix_labels[int(xx)][int(yy)]: (int(xx), int(yy))
+            for xx, yy in xy}
+        # -- Find coordinates bbl.
+        bbls = np.load(bblpath)
+        np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
+        xx, yy = zip(*self.coords.values())
+        coord_bbls = [bbls[xx[ii] - 20][yy[ii] - 20] for ii in range(len(xx))]
+        self.coords_bbls = dict(zip(self.coords.keys(), coord_bbls))
+        # -- Map BBL to ZipCode.
+        df = pd.read_csv(plutopath, usecols=["BBL", "BldgClass", "ZipCode"]) \
+            .set_index("BBL")
+        df = df[[isinstance(ii, str) for ii in df.BldgClass]]
+        self.dd_bbl_zip = {int(k): v for k, v in df.ZipCode.to_dict().items()}
+        # -- Map BBL to building class.
+        self.dd_bbl_bldgclss = {int(k): v for k, v in df.BldgClass.to_dict().items()}
+        # -- Map coordinates to building class.
+        crd_cls = {k: lc.dd_bbl_bldgclss.get(v, -9999) for k, v in lc.coords_bbls.items()}
+        crd_cls = {k: v for k, v in coords_bldgclass.items() if v != -9999}
+        self.coords_cls = {k: self.dd_bldgclss[ii] for k, v in crd_cls.items()
+            for ii in filter(lambda x: v.startswith(x), self.dd_bldgclss)}
+        # -- Print status.
         self._finish(tstart)
 
 
@@ -636,11 +660,55 @@ class LightCurves(object):
             if hasattr(self, "src_ignore"):
                 ons = np.delete(ons, self.src_ignore, axis=1)
                 off = np.delete(off, self.src_ignore, axis=1)
-        # -- Else set to empty lists.
-        else:
+        else: # -- Else set to empty lists.
             ons, off = [], []
         # -- Return loaded data.
         return [lcs, ons, off]
+
+
+    def loadnight(self, night, load_all=True, lc_mean=True):
+        """Load a set of lightcurves, ons, and offs.
+        Args:
+            night (datetime) - night to load data for.
+            load_all (bool) - load transitions?
+            lc_mean (bool) - take the mean across color channels?
+        """
+        # -- Print status.
+        tstart = self._start("Loading data for {}.".format(night.date()))
+        # -- Store night.
+        self.night = night
+        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
+        self.load_all = load_all
+        # -- Get records for given night.
+        mdata = self.meta[self.meta.index == night].to_dict("records")
+        # -- If there are no records for the provided night, raise an error.
+        if len(mdata) == 0:
+            raise ValueError("{} is not a valid night.".format(night.date()))
+        else:
+            data = []
+            # -- For each metadata value.
+            for idx in range(len(mdata)):
+                # -- Grab start idx, end idx, fname, and timesteps.
+                vals = mdata[idx]
+                start, end, fname = vals["start"], vals["end"], vals["fname"]
+                # -- Load lcs, ons, and offs and append to data.
+                data.append(self._loadfiles(fname, start, end, lc_mean))
+            # -- Concatenate all like files and store.
+            self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
+            self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
+            self.lc_offs = np.concatenate([dd[2] for dd in data], axis=0)
+            if lc_mean: # -- Only backfill/forward fill if taking mean.
+                # -- Backfill/forward fill -9999 in lcs (up to 3 consecutive).
+                self.lcs = pd.DataFrame(self.lcs).replace(-9999, np.nan) \
+                    .fillna(method="bfill", limit=3, axis=0) \
+                    .fillna(method="ffill", limit=3, axis=0) \
+                    .replace(np.nan, -9999).as_matrix()
+        # -- Load bigoff dataframe if load_all has been specified.
+        if self.load_all:
+            path_boffs = os.path.join(self.path_var, "bigoffs.pkl")
+            self.lc_bigoffs = pd.read_pickle(path_boffs).set_index("index")
+        # -- Print status
+        self._finish(tstart)
 
 
 if __name__ == "__main__":
