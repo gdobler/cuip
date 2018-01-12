@@ -3,6 +3,7 @@ from __future__ import print_function
 import cPickle
 import numpy as np
 import pandas as pd
+from collections import Counter
 # from fastdtw import fastdtw
 from sklearn.cluster import KMeans
 from sklearn.externals import joblib
@@ -15,6 +16,45 @@ from tsfresh import extract_features
 from tsfresh.feature_extraction.settings import EfficientFCParameters
 
 
+def traintestsplit(lc, train_split=0.7):
+    """Split sources into training and testing sets, where each bbl is only
+    assigned to either the training or test set.
+    Args:
+        lc (object) - LightCurve object.
+        train_split (float) - proportion of training set.
+    Returns:
+        train (list) - List of sources' idx.
+        test (list) - List of sources' idx.
+    """
+    np.random.seed(1)
+    # -- Count the number of sources for each bbl.
+    bbl = Counter(lc.coords_bbls.values())
+    key = bbl.keys()
+    np.random.shuffle(key)
+    # -- Dictionaries to store src count and list of bbls.
+    trn = {"count": 0., "bbls": []}
+    tst = {"count": 0., "bbls": []}
+    # -- For each bbl key add to training or test set.
+    for kk in key:
+        vv = bbl[kk]
+        # -- If it's the first record add a records to the train set.
+        if trn["count"] == 0.:
+            trn["bbls"].append(kk)
+            trn["count"] = trn["count"] + vv
+        # -- If train set is above 0.7 of total, add to test set.
+        elif trn["count"] / (trn["count"] + tst["count"]) > train_split:
+            tst["bbls"].append(kk)
+            tst["count"] = tst["count"] + vv
+        # -- Else add to train set.
+        else:
+            trn["bbls"].append(kk)
+            trn["count"] = trn["count"] + vv
+    # -- Map source indexes based on bbls.
+    train = [src for src, bbl in lc.coords_bbls.items() if bbl in trn["bbls"]]
+    test  = [src for src, bbl in lc.coords_bbls.items() if bbl in tst["bbls"]]
+    return [train, test]
+
+
 def stack_nights_np(lc):
     """Load complete lightcurve data for weeknights. De-trend, filter noise,
     and min max each lightcurve.
@@ -23,8 +63,6 @@ def stack_nights_np(lc):
     Returns:
         data (array) - data cube.
     """
-
-
     holidates = [pd.datetime(2013, 12, 25).date(),
                  pd.datetime(2013, 12, 26).date()]
     meta_gb = lc.meta.groupby(lc.meta.index).mean()
@@ -384,6 +422,7 @@ def sources_to_bbls(lc):
 
 
 if __name__ == "__main__":
+
     data, rel_bigoffs = stack_nights_df(lc)
     lclass, rclass = split_bbls_left_right(lc, 0.7)
     train, train_labels, test, test_labels = train_test_datacube(data, lclass, rclass)
