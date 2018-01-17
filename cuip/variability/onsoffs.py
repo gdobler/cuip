@@ -329,24 +329,23 @@ class CLI(object):
         sys.stdout.flush()
         # -- Empty list to save bigoff dfs.
         bigoffs_df = []
-        lcs = []
         # -- Loop over each unique day in lc.meta.index.
         for dd in lc.meta.index.unique():
             lc.loadnight(dd, load_all=False)
             dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs = main(lc)
-            lcs.append(dtrend)
             bigoffs_df.append(bigoffs)
             onfname = "good_ons_{}.npy".format(lc.night.date())
             offname = "good_offs_{}.npy".format(lc.night.date())
+            fdtrend = "detrended_{}.npy".format(lc.night.date())
             np.save(os.path.join(outpath, onfname), good_ons)
             np.save(os.path.join(outpath, offname), good_offs)
+            dtrend.dump(os.path.join(outpath, fdtrend))
             plot_bigoffs(dtrend, bigoffs, False)
             plot_bigoffs(lcs_diff, bigoffs, False, "./pdf/night_hp_{}.png")
             plot_bigoffs(lcs_gd, bigoffs, False, "./pdf/night_gd_{}.png")
         df = pd.DataFrame(bigoffs_df)
         df["index"] = lc.meta.index.unique()
         df.to_pickle(os.path.join(outpath, "bigoffs.pkl"))
-        np.save(os.path.join(outpath, "med_detrended_lcs.npy"), np.array(lcs))
 
 
 if __name__ == "__main__":
