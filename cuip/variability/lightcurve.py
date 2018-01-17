@@ -509,6 +509,8 @@ class LightCurves(object):
         self.path_out = opath
         # -- Create metadata df.
         self._metadata(self.path_reg)
+        # -- Load a night.
+        self.loadnight(self.meta.index[0], False, False)
         # -- Create data dictionaries.
         wpath = os.path.join(spath, "window_labels.out")
         bblpath = os.path.join(spath, "12_3_14_bblgrid_clean.npy")
@@ -576,7 +578,7 @@ class LightCurves(object):
         self.lcs_dtrend = np.load(os.path.join(self.path_var, "med_detrended_lcs.npy"))
         # -- Load mask counts and merge into self.meta.
         dd = [dd for dd in self.meta.index.unique()]
-        ma = [ii.mask.sum() for ii in lcs]
+        ma = [ii.mask.sum() for ii in self.lcs]
         df = pd.DataFrame(np.array([dd, ma]).T, columns=["date", "nmask"]) \
             .set_index("date")
         self.meta = self.meta.merge(df, left_index=True, right_index=True)
@@ -623,15 +625,18 @@ class LightCurves(object):
         # -- Map BBL to building class.
         self.dd_bbl_bldgclss = {int(k): v for k, v in df.BldgClass.to_dict().items()}
         # -- Map coordinates to building class.
-        crd_cls = {k: lc.dd_bbl_bldgclss.get(v, -9999) for k, v in lc.coords_bbls.items()}
-        crd_cls = {k: v for k, v in coords_bldgclass.items() if v != -9999}
-        self.coords_cls = {k: self.dd_bldgclss[ii] for k, v in crd_cls.items()
-            for ii in filter(lambda x: v.startswith(x), self.dd_bldgclss)}
+        crd_cls = {k: self.dd_bbl_bldgclss.get(v, -9999)
+                    for k, v in self.coords_bbls.items()}
+        self.coords_cls = {k: self.dd_bldgclss[[kk for kk in
+                                                self.dd_bldgclss.keys()
+                                                if v.startswith(kk)][0]]
+                           for k, v in crd_cls.items()
+                           if v != -9999}
         # -- Print status.
         self._finish(tstart)
 
 
-    def _loadfiles(self, fname, start, end, lc_mean=True):
+    def _loadfiles(self, fname, start, end, load_all=True, lc_mean=True):
         """Load lightcurves, ons, and offs.
         Args:
             fname (str) - fname suffix (e.g., '0001').
@@ -641,17 +646,23 @@ class LightCurves(object):
         Returns:
             (list) - [lcs, ons, off]
         """
+        # # -- Load preprocessed lightcurves to grab masks.
+        # fdtrnd = os.path.join(self.path_out, "onsoffs", "med_detrended_lcs.npy")
+        # dtrended = np.load(fdtrnd)
+        # mask = dtrended[list(lc.meta.index).index(lc.night)].mask
         # -- Load lightcurves.
         path = os.path.join(self.path_lig, "light_curves_{}.npy".format(fname))
         if lc_mean:
             lcs = np.load(path).mean(-1)[start: end]
         else:
             lcs = np.load(path)[start: end]
+        # # -- Add the mask.
+        # lcs = np.ma.array(lcs, mask=mask)
         # -- Remove sources that aren't in all imgs if self.src_ignore exists.
         if hasattr(self, "src_ignore"):
             lcs = np.delete(lcs, self.src_ignore, axis=1)
         # -- Load transitions (unless detecting ons/offs).
-        if self.load_all:
+        if load_all:
             fname = "good_ons_{}.npy".format(self.night.date())
             ons = np.load(os.path.join(self.path_var, fname))
             fname = "good_offs_{}.npy".format(self.night.date())
@@ -677,8 +688,6 @@ class LightCurves(object):
         tstart = self._start("Loading data for {}.".format(night.date()))
         # -- Store night.
         self.night = night
-        # -- Load supplementary files (i.e., ons, offs, etc.) or not.
-        self.load_all = load_all
         # -- Get records for given night.
         mdata = self.meta[self.meta.index == night].to_dict("records")
         # -- If there are no records for the provided night, raise an error.
@@ -692,7 +701,7 @@ class LightCurves(object):
                 vals = mdata[idx]
                 start, end, fname = vals["start"], vals["end"], vals["fname"]
                 # -- Load lcs, ons, and offs and append to data.
-                data.append(self._loadfiles(fname, start, end, lc_mean))
+                data.append(self._loadfiles(fname, start, end, load_all, lc_mean))
             # -- Concatenate all like files and store.
             self.lcs = np.concatenate([dd[0] for dd in data], axis=0)
             self.lc_ons = np.concatenate([dd[1] for dd in data], axis=0)
@@ -704,7 +713,7 @@ class LightCurves(object):
                     .fillna(method="ffill", limit=3, axis=0) \
                     .replace(np.nan, -9999).as_matrix()
         # -- Load bigoff dataframe if load_all has been specified.
-        if self.load_all:
+        if load_all:
             path_boffs = os.path.join(self.path_var, "bigoffs.pkl")
             self.lc_bigoffs = pd.read_pickle(path_boffs).set_index("index")
         # -- Print status
@@ -723,7 +732,4 @@ if __name__ == "__main__":
     VARI = os.path.join(OUTP, "onsoffs")
 
     # -- Create LightCurve object.
-    lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP)
-
-    # -- Load a specific night for plotting.
-    lc.loadnight(pd.datetime(2014, 6, 16))
+    lc = LightCurves(LIGH, VARI, REGI, SUPP, OUTP, False)
