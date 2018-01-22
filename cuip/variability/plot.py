@@ -1,7 +1,9 @@
 from __future__ import print_function
 
+import os
 import re
 import scipy
+import imageio
 import cPickle
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,7 +31,7 @@ def read_img(file_path):
                 .reshape(2160, 4096, 3)[...,::-1]
 
     if file_path.endswith(".png"):
-        img = scipy.misc.imread(file_path)
+        img = imageio.imread(file_path)
 
     return img
 
@@ -334,6 +336,19 @@ def plot_winter_summer_BEST_results(lc, res=True):
     plt.show()
 
 
+def plot_coords_by_idx(lc, coords):
+    """"""
+    yy, xx = zip(*[lc.coords[nn] for nn in coords if nn in lc.coords.keys()])
+    img = adjust_img(lc, os.environ["EXIMG"])
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.imshow(img)
+    ax.imshow(np.ma.array(lc.matrix_labels, mask=~np.isin(lc.matrix_labels, coords)))
+    ax.scatter(xx, yy, facecolors="none", edgecolors="r", linewidth=2)
+    ax.set_xticks([])
+    ax.set_yticks([])
+    plt.show()
+
+
 def plot_appertures(lc):
     """Plot residential/commercial split of appertures and overlay apperture
     centers.
@@ -341,15 +356,15 @@ def plot_appertures(lc):
         lc (obj) - LightCurve object.
     """
 
-    xx, yy = zip(*map(lambda x: lc.coords[x], lc.coords.keys()))
+    yy, xx = zip(*map(lambda x: lc.coords[x], lc.coords.keys()))
 
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(lc.mat_labs)
-    ax.imshow(lc.mat_labs[:1020], cmap="terrain")
+    ax.imshow(lc.matrix_labels)
+    ax.imshow(lc.matrix_labels[:1020], cmap="terrain")
     ax.scatter(xx, yy, c="r", s=2, marker="x")
 
     ax.set_title("Residential/Commercial Split of Appertures (with Centers)")
-    ax.set_ylim(0, lc.mat_labs.shape[0])
+    ax.set_ylim(0, lc.matrix_labels.shape[0])
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
@@ -391,9 +406,9 @@ def adjust_img(lc, img_path):
     # -- Find drow and dcol for the example image.
     spath = img_path.split("/")
     yyyy, mm, dd = int(spath[5]), int(spath[6]), int(spath[7])
-    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd).date()]["fname"]
-    reg = pd.read_csv(os.path.join(lc.path_regis, "register_{}.csv".format(fnum)))
-    img_reg = reg[reg.fname == os.path.basename(img_path)]
+    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd - 1)]["fname"]
+    reg = pd.read_csv(os.path.join(lc.path_reg, "register_{}.csv".format(fnum)))
+    img_reg = reg[reg.fname.str[:-4] == os.path.basename(img_path)[:-4]]
     drow = img_reg.drow.values.round().astype(int)[0]
     dcol = img_reg.dcol.values.round().astype(int)[0]
     print("LIGHTCURVES: drow {}                                              " \
