@@ -2,12 +2,15 @@ from __future__ import print_function
 
 import os
 import cPickle
+import itertools
 import numpy as np
 import pandas as pd
+import multiprocessing
 import matplotlib.pyplot as plt
 from collections import Counter
 # from fastdtw import fastdtw
 from sklearn.cluster import KMeans
+from itertools import combinations
 from sklearn.externals import joblib
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import GridSearchCV
@@ -18,6 +21,7 @@ from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
 # from tsfresh import extract_features
 # from tsfresh.feature_extraction.settings import EfficientFCParameters
 plt.style.use("ggplot")
+
 
 def traintestsplit(lc, train_split=0.7, seed=5):
     """Split sources into training and testing sets, where each bbl is only
@@ -86,7 +90,7 @@ def stack_nights(path):
     return data
 
 
-def split_data(data, traink, testk, downsample=30, ndays=74):
+def split_data(data, traink, testk, ndays=74):
     """Stack data and split into train and test sets.
     Args:
         data (dict) - dict of {pd.datetime: np.ma.array} pairs.
@@ -103,17 +107,20 @@ def split_data(data, traink, testk, downsample=30, ndays=74):
     # -- Split data into training and testing sets.
     train = np.vstack(stack[:, np.array(traink) - 1].T)
     test  = np.vstack(stack[:, np.array(testk) -1].T)
-    if downsample: # -- If downsampling.
-        # -- Define the padding size required.
-        pad   = int(np.ceil(arr_len / float(downsample)) * downsample - arr_len)
-        # -- Add padding to train/test and take the mean over N values.
-        train = np.append(train, np.zeros((train.shape[0], pad)) * np.NaN, axis=1)
-        train = np.nanmean(train.reshape(-1, 30), axis=1).reshape(-1, 90)
-        test  = np.append(test, np.zeros((test.shape[0], pad)) * np.NaN, axis=1)
-        test  = np.nanmean(test.reshape(-1, 30), axis=1).reshape(-1, 90)
     # -- Define the number of days in the dataset.
     ndays = stack.shape[-1]
     return [train, test, ndays]
+
+
+def downsample(arr, size):
+    """"""
+    arr_len = arr.shape[1]
+    # -- Define the padding size required.
+    pad   = int(np.ceil(arr.shape[1] / float(size)) * size - arr.shape[1])
+    # -- Add padding to train/test and take the mean over N values.
+    tmp = np.append(arr, np.zeros((arr.shape[0], pad)) * np.NaN, axis=1)
+    tmp = np.nanmean(tmp.reshape(-1, size), axis=1).reshape(-1, arr_len / size + 1)
+    return tmp
 
 
 def rf_classifier(fpath, train, trainv, test, testv, ndays, bool_label=True,
@@ -213,14 +220,147 @@ def plot_sampling_result(npy_path):
     plt.show()
 
 
-def main(lc, rf_file, downsample=False, load=True):
+def fft_pull_weekday_data(data, wd_int, arr_len=2692):
+    """"""
+    day = np.concatenate([v[:arr_len, :] for k, v in data.items()
+                          if k.weekday() == wd_int], axis=0).T
+    return day
+
+
+def fft_weekday_combo(data, wd_int, arr_len=2692):
+    """"""
+    wd = [v[:arr_len, :] for k, v in data.items() if k.weekday() == wd_int]
+    wd = np.stack(wd).T
+    nmon = wd.shape[-1]
+    inds = np.array(list(itertools.combinations(range(nmon), 2))).T
+    cmbs = wd[..., inds]
+    xx, yy, zz, ww = cmbs.shape
+    combo = np.swapaxes(cmbs, 1, -1).reshape(xx * ww, yy * zz)
+    return combo
+
+
+def fft_split(data, traink, testk, ds_size=False, fft_combo=False):
+    """"""
+    # -- Concatenate all weekdays into single source vectors.
+    days = [fft_pull_weekday_data(data, dd) for dd in range(5)]
+    # -- If a downsample size is provided, downsample.
+    if type(ds_size) == int:
+        days = [downsample(dd, ds_size) for dd in days]
+    # -- Calculate ffts.
+    ffts = np.array([np.fft.fft(dd) for dd in days])
+    # --
+    rows, cols = zip(*[fft.shape for fft in ffts])
+    # --
+    train = np.vstack([fft[np.array(traink) - 1, :min(cols)] for fft in ffts])
+    test  = np.vstack([fft[np.array(testk ) - 1, :min(cols)] for fft in ffts])
+    return [train, test]
+
+
+def fft_combination_split(data, traink, trainv, testk, testv, ds_size=False):
+    """"""
+    print("WARNING: This block of code must be run in chunks.")
+    print("WARNING: It will otherwise cause memory errors.")
+    sys.stdout.flush()
+    # -- Concatenate weekdays into source pair vectors.
+    days = [fft_weekday_combo(data, dd) for dd in range(5)]
+    # -- If a downsample size is provided, downsample.
+    if type(ds_size) == int:
+        days = [downsample(dd, ds_size) for dd in days]
+    # -- Create fft function.
+    def fft(x):
+        return np.fft.fft(x)
+    # -- Multiprocess fft calculation.
+    p = multiprocessing.Pool((multiprocessing.cpu_count() - 2) * 2)
+    mon = np.array(p.map(fft, days[0]))
+    tue = np.array(p.map(fft, days[1]))
+    wed = np.array(p.map(fft, days[2]))
+    thu = np.array(p.map(fft, days[3]))
+    fri = np.array(p.map(fft, days[4]))
+    p.close()
+    p.join()
+    ffts = [mon, tue, wed, thu, fri]
+    # -- Create coord keys for each day.
+    keys = [np.array([lc.coords.keys()] * (fft.shape[0] / 4147)).T.ravel()
+            for fft in ffts]
+    # -- Identify training keys.
+    train_keys = [np.isin(key, traink) for key in keys]
+    test_keys = [np.isin(key, testk) for key in keys]
+    # -- Collect training/testing observations from ffts.
+    train_ffts = [fft[key] for fft, key in zip(ffts, train_keys)]
+    test_ffts = [fft[key] for fft, key in zip(ffts, test_keys)]
+    # -- Collect training/testing labels.
+    train_labels = [np.array([trainv] * (fft.shape[0] / len(trainv))).T.ravel()
+                    for fft in train_ffts]
+    test_labels = [np.array([testv] * (fft.shape[0] / len(testv))).T.ravel()
+                   for fft in test_ffts]
+    # -- Flatten observations and labels.
+    train_ffts   = np.concatenate(train_ffts, axis=0)
+    train_labels = np.concatenate(train_labels, axis=0)
+    test_ffts    = np.concatenate(test_ffts, axis=0)
+    test_labels  = np.concatenate(test_labels, axis=0)
+    return [train_ffts, train_labels, test_ffts, test_labels]
+
+   #  In [6]: for nn, fft in zip(["mon", "tue", "wed", "thu", "fri"], train_ffts):
+   # ...:     np.save("train_fft_{}.npy".format(nn), fft)
+   # train_ffts = [np.load(os.path.join("train_test_npy", fname))
+   #               for fname in sorted(filter(lambda x: x.startswith("train"),
+   #               os.listdir("train_test_npy")))]
+   # train_labels = [np.array([trainv] * (fft.shape[0] / len(trainv))).T.ravel()
+   #                 for fft in train_ffts]
+   # train_ffts = np.concatenate(train_ffts, axis=0)
+   # train_labels = np.concatenate(train_labels, axis=0)
+   # train_labels = (train_labels == 1).astype(int)
+   # njobs = multiprocessing.cpu_count() - 2
+   # clf = RandomForestClassifier(n_estimators=1000, random_state=0,
+   #    class_weight="balanced", n_jobs=njobs)
+   # test_shapes = [tt.size for tt in test_labels]
+   # vals = [0] + list(np.cumsum(test_shapes))
+   # test_idx = np.concatenate([np.array([testk] * (fft.size / len(testk))).T.ravel() for fft in test_labels])
+   # labs = [(lc.coords_cls[ii] == 1) * 1 for ii in test_idx]
+   # df = pd.DataFrame(np.array([test_idx, test_preds, labs]).T, columns=["idx", "preds", "actual"])
+   # df["bbl"] = [lc.coords_bbls[ii] for ii in df.idx]
+   # tst = df.groupby("idx").mean()
+   # tst["vote"] = (tst["preds"] > 0.3) * 1.
+   # tst = df.groupby("bbl").mean()
+   # tst["vote"] = (tst["preds"] > 0.25) * 1.
+
+
+def fft_main(lc, ds_size=False):
     """"""
     # -- Split keys into train and test set,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
     # -- Load data into and 3D numpy array.
     data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
     # -- Split data into train and test (optionally downsample).
-    train, test, ndays = split_data(data, traink, testk, downsample)
+    if ds_size:
+        train, test = fft_split(data, traink, testk, ds_size)
+    else:
+        train, test = fft_split(data, traink, testk)
+    # --
+    clf = rf_classifier("./fft_clf.pkl", train, trainv, test, testv, 5, load=False)
+    preds = clf.predict(test)
+    # -- Check if voting changes the results with various break points.
+    print("Vote Comparison:")
+    for ii in np.array(range(20)) / 20.:
+        votes_comparison(preds, testv, 5, ii)
+    print(confusion_matrix((np.array(testv * ndays) == 1).astype(int), preds))
+    return({"traink": traink, "trainv": trainv, "testk": testk, "testv": testv,
+            "data": data, "train": train, "test": test, "ndays": ndays,
+            "clf": clf, "preds": preds})
+
+
+def main(lc, rf_file, ds_size=False, load=True):
+    """"""
+    # -- Split keys into train and test set,
+    [traink, trainv], [testk, testv] = traintestsplit(lc)
+    # -- Load data into and 3D numpy array.
+    data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
+    # -- Split data into train and test (optionally downsample).
+    train, test, ndays = split_data(data, traink, testk)
+    # -- Downsample if vals is passed.
+    if ds_size:
+        train = downsample(train, ds_size)
+        test = downsample(test, ds_size)
     # -- Train random forest and predict.
     clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load)
     preds = clf.predict(test)
