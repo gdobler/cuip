@@ -124,7 +124,7 @@ def downsample(arr, size):
 
 
 def rf_classifier(fpath, train, trainv, test, testv, ndays, bool_label=True,
-                  njobs=-1, load=True):
+                  njobs=multiprocessing.cpu_count() - 2, load=True):
     """"""
     # -- Training and testing labels for each source.
     train_labels = np.array(trainv * ndays)
@@ -324,6 +324,37 @@ def fft_combination_split(data, traink, trainv, testk, testv, ds_size=False):
    # tst = df.groupby("bbl").mean()
    # tst["vote"] = (tst["preds"] > 0.25) * 1.
 
+def combo_main(lc, ds_size=False, whiten=True):
+    """"""
+    # -- Split keys into train and test set,
+    [traink, trainv], [testk, testv] = traintestsplit(lc)
+    # -- Load data into and 3D numpy array.
+    data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
+    # -- Split data into train and test (optionally downsample).
+    train, test, ndays = split_data(data, traink, testk)
+    if ds_size:
+        train = downsample(train, ds_size)
+        test = downsample(test, ds_size)
+    # -- Calculate the fourier transform.
+    fft_train = np.fft.fft(train)
+    fft_test = np.fft.fft(test)
+    # -- Concatenate the data.
+    combo_train = np.concatenate([train, fft_train], axis=1)
+    combo_test = np.concatenate([test, fft_test], axis=1)
+    # --
+    if whiten:
+        std = np.concatenate([combo_train, combo_test], axis=0).std(axis=0)
+        combo_train = combo_train / std
+        combo_test = combo_test / std
+    # --
+    clf = rf_classifier("./whiten_tmp.pkl", combo_train, trainv, combo_test, testv, ndays, load=False)
+    preds = clf.predict(combo_test)
+    # --
+    print("Vote Comparison:")
+    for ii in np.array(range(20)) / 20.:
+        votes_comparison(preds, testv, ndays, ii)
+    print(confusion_matrix((np.array(testv * ndays) == 1).astype(int), preds))
+
 
 def fft_main(lc, ds_size=False):
     """"""
@@ -349,7 +380,7 @@ def fft_main(lc, ds_size=False):
             "clf": clf, "preds": preds})
 
 
-def main(lc, rf_file, ds_size=False, load=True):
+def main(lc, rf_file, ds_size=False, load=True, whiten=True):
     """"""
     # -- Split keys into train and test set,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
@@ -361,6 +392,11 @@ def main(lc, rf_file, ds_size=False, load=True):
     if ds_size:
         train = downsample(train, ds_size)
         test = downsample(test, ds_size)
+    # -- Whiten data.
+    if whiten:
+        std = np.concatenate([train, test], axis=0).std(axis=0)
+        train = train / std
+        test = test / std
     # -- Train random forest and predict.
     clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load)
     preds = clf.predict(test)
