@@ -1,6 +1,7 @@
 from __future__ import print_function
 
 import os
+import time
 import cPickle
 import itertools
 import numpy as np
@@ -15,12 +16,25 @@ from sklearn.externals import joblib
 from sklearn.preprocessing import MinMaxScaler
 from sklearn.model_selection import GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import GradientBoostingClassifier
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import silhouette_score, confusion_matrix
 from scipy.ndimage.filters import gaussian_filter1d, gaussian_filter
 # from tsfresh import extract_features
 # from tsfresh.feature_extraction.settings import EfficientFCParameters
 plt.style.use("ggplot")
+
+
+def _start(text):
+    """"""
+    print("LIGHTCURVES: {}".format(text))
+    sys.stdout.flush()
+    return time.time()
+
+
+def _finish(tstart):
+    """"""
+    print("LIGHTCURVES: Complete ({:.2f}s)".format(time.time() - tstart))
 
 
 def traintestsplit(lc, train_split=0.7, seed=5):
@@ -33,6 +47,9 @@ def traintestsplit(lc, train_split=0.7, seed=5):
         train (list) - List of sources' idx.
         test (list) - List of sources' idx.
     """
+    # -- Print status.
+    tstart = _start("Splitting keys into training/testing set.")
+    # --
     np.random.seed(seed)
     # -- Count the number of sources for each bbl.
     bbl = Counter(lc.coords_bbls.values())
@@ -64,10 +81,12 @@ def traintestsplit(lc, train_split=0.7, seed=5):
     testk  = filter(lambda x: x in lc.coords_cls.keys(), testk)
     testv  = [lc.coords_cls[ii] for ii in testk]
     # -- Print status.
-    print("Train Set: {} res, {} non-res".format(
+    print("LIGHTCURVES:     Train Set: {} res, {} non-res".format(
         sum(np.array(trainv) == 1), sum(np.array(trainv) != 1)))
-    print("Test Set: {} res, {} non-res".format(
+    print("LIGHTCURVES:     Test Set: {} res, {} non-res".format(
         sum(np.array(testv) == 1), sum(np.array(testv) != 1)))
+    # --
+    _finish(tstart)
     return [[traink, trainv], [testk, testv]]
 
 
@@ -78,6 +97,8 @@ def stack_nights(path):
     Returns:
         data (dict) - dict of {pd.datetime: np.ma.array} pairs.
     """
+    # -- Print status.
+    tstart = _start("Creating data dict.")
     # -- Collect filenames at provided path.
     dtrend_fnames = filter(lambda x: x.startswith("detrend"), os.listdir(path))
     # -- Stack dtrended lightcurves to
@@ -87,6 +108,8 @@ def stack_nights(path):
         if (tmp.mask.sum() == 0) & (tmp.shape[0] > 2690):
             date = pd.datetime.strptime(fname[10:-4], "%Y-%m-%d")
             data[date] = tmp
+    # --
+    _finish(tstart)
     return data
 
 
@@ -101,6 +124,8 @@ def split_data(data, traink, testk, ndays=74):
         test (array) - 2D array, each test sources time series.
         ndays (int) - number of days split into train/test sets.
     """
+    # -- Print status.
+    tstart = _start("Splitting data into training/testing sets.")
     # -- Stack the data in numpy cube.
     arr_len = 2692
     stack = np.dstack([arr.data[:arr_len] for arr in data.values()])[:, :, :ndays]
@@ -109,37 +134,55 @@ def split_data(data, traink, testk, ndays=74):
     test  = np.vstack(stack[:, np.array(testk) -1].T)
     # -- Define the number of days in the dataset.
     ndays = stack.shape[-1]
+    # --
+    _finish(tstart)
     return [train, test, ndays]
 
 
 def downsample(arr, size):
     """"""
+    # --
+    tstart = _start("Downsampling data.")
+    # --
     arr_len = arr.shape[1]
     # -- Define the padding size required.
     pad   = int(np.ceil(arr.shape[1] / float(size)) * size - arr.shape[1])
     # -- Add padding to train/test and take the mean over N values.
     tmp = np.append(arr, np.zeros((arr.shape[0], pad)) * np.NaN, axis=1)
     tmp = np.nanmean(tmp.reshape(-1, size), axis=1).reshape(-1, arr_len / size + 1)
+    # --
+    _finish(tstart)
     return tmp
 
 
 def rf_classifier(fpath, train, trainv, test, testv, ndays, bool_label=True,
-                  njobs=multiprocessing.cpu_count() - 2, load=True):
+                  njobs=multiprocessing.cpu_count() - 2, load=True, grad=False,
+                  append_coords=False):
     """"""
+    # --
+    tstart = _start("Training or loading classifier.")
     # -- Training and testing labels for each source.
     train_labels = np.array(trainv * ndays)
     # -- If bool_label, convert to True for residential and False else.
     if bool_label:
         train_labels = (train_labels == 1).astype(int)
+    if append_coords:
+        coords = np.array([lc.coords[ii] for ii in traink * ndays])
+        train = np.concatenate([train, coords], axis=1)
     if load: # -- Load existing classifier.
         clf = joblib.load(fpath)
     else: # -- Fit a classifier.
         clf = RandomForestClassifier(n_estimators=1000, random_state=0,
-            class_weight="balanced", n_jobs=njobs)
+            class_weight="balanced", n_jobs=njobs, verbose=5)
+        if grad:
+            clf = GradientBoostingClassifier(learning_rate=0.05,
+                n_estimators=200, random_state=0, max_depth=1, verbose=5)
         # params = {"class_weight": ("balanced")}
         # clf = GridSearchCV(clf, params)
         clf.fit(train, train_labels)
         joblib.dump(clf, fpath)
+    # --
+    _finish(tstart)
     return clf
 
 
@@ -159,6 +202,7 @@ def votes_comparison(preds, testv, ndays, split=0.5, pprint=True):
     if pprint:
         print("Split: {}, Acc.: {:.2f}, Res. Acc.: {:.2f}, Non-Res. Acc.: {:.2f}" \
             .format(split, acc * 100, res_acc * 100, non_res_acc * 100))
+    # --
     return([acc, res_acc, non_res_acc])
 
 
@@ -326,6 +370,8 @@ def fft_combination_split(data, traink, trainv, testk, testv, ds_size=False):
 
 def combo_main(lc, ds_size=False, whiten=True):
     """"""
+    # --
+    tstart = _start("Classify with full ts and fft.")
     # -- Split keys into train and test set,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
     # -- Load data into and 3D numpy array.
@@ -354,10 +400,14 @@ def combo_main(lc, ds_size=False, whiten=True):
     for ii in np.array(range(20)) / 20.:
         votes_comparison(preds, testv, ndays, ii)
     print(confusion_matrix((np.array(testv * ndays) == 1).astype(int), preds))
+    # --
+    _finish(tstart)
 
 
 def fft_main(lc, ds_size=False):
     """"""
+    # --
+    tstart = _start("Classify with fft.")
     # -- Split keys into train and test set,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
     # -- Load data into and 3D numpy array.
@@ -375,13 +425,19 @@ def fft_main(lc, ds_size=False):
     for ii in np.array(range(20)) / 20.:
         votes_comparison(preds, testv, 5, ii)
     print(confusion_matrix((np.array(testv * ndays) == 1).astype(int), preds))
+    # --
+    _finish(tstart)
+    # --
     return({"traink": traink, "trainv": trainv, "testk": testk, "testv": testv,
             "data": data, "train": train, "test": test, "ndays": ndays,
             "clf": clf, "preds": preds})
 
 
-def main(lc, rf_file, ds_size=False, load=True, whiten=True):
+def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
+         append_coords=False):
     """"""
+    # --
+    tstart = _start("Classify with full fft.")
     # -- Split keys into train and test set,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
     # -- Load data into and 3D numpy array.
@@ -395,16 +451,23 @@ def main(lc, rf_file, ds_size=False, load=True, whiten=True):
     # -- Whiten data.
     if whiten:
         std = np.concatenate([train, test], axis=0).std(axis=0)
-        train = train / std
-        test = test / std
+        train /= std
+        test /= std
+    if append_coords:
+        coords = np.array([lc.coords[ii] for ii in testk * ndays])
+        test = np.concatenate([test, coords], axis=1)
     # -- Train random forest and predict.
-    clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load)
+    clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load,
+        grad=grad, append_coords=append_coords)
     preds = clf.predict(test)
     # -- Check if voting changes the results with various break points.
     print("Vote Comparison:")
     for ii in np.array(range(20)) / 20.:
         votes_comparison(preds, testv, ndays, ii)
     print(confusion_matrix((np.array(testv * ndays) == 1).astype(int), preds))
+    # --
+    _finish(tstart)
+    # --
     return({"traink": traink, "trainv": trainv, "testk": testk, "testv": testv,
             "data": data, "train": train, "test": test, "ndays": ndays,
             "clf": clf, "preds": preds})
