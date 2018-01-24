@@ -97,6 +97,8 @@ def stack_nights(path):
     Returns:
         data (dict) - dict of {pd.datetime: np.ma.array} pairs.
     """
+    # --
+    arr_len = 2692
     # -- Print status.
     tstart = _start("Creating data dict.")
     # -- Collect filenames at provided path.
@@ -107,13 +109,16 @@ def stack_nights(path):
         tmp = np.load(os.path.join(path, fname))
         if (tmp.mask.sum() == 0) & (tmp.shape[0] > 2690):
             date = pd.datetime.strptime(fname[10:-4], "%Y-%m-%d")
-            data[date] = tmp
+            ons = np.load(os.path.join(path, "good_ons_{}.npy".format(fname[10:-4])))
+            offs = np.load(os.path.join(path, "good_offs_{}.npy".format(fname[10:-4])))
+            data[date] = {"data": tmp[:arr_len], "ons": ons[:arr_len],
+                          "offs": offs[:arr_len]}
     # --
     _finish(tstart)
     return data
 
 
-def split_data(data, traink, testk, ndays=74):
+def split_data(data, traink, testk):
     """Stack data and split into train and test sets.
     Args:
         data (dict) - dict of {pd.datetime: np.ma.array} pairs.
@@ -127,8 +132,7 @@ def split_data(data, traink, testk, ndays=74):
     # -- Print status.
     tstart = _start("Splitting data into training/testing sets.")
     # -- Stack the data in numpy cube.
-    arr_len = 2692
-    stack = np.dstack([arr.data[:arr_len] for arr in data.values()])[:, :, :ndays]
+    stack = np.dstack(data)
     # -- Split data into training and testing sets.
     train = np.vstack(stack[:, np.array(traink) - 1].T)
     test  = np.vstack(stack[:, np.array(testk) -1].T)
@@ -156,8 +160,7 @@ def downsample(arr, size):
 
 
 def rf_classifier(fpath, train, trainv, test, testv, ndays, bool_label=True,
-                  njobs=multiprocessing.cpu_count() - 2, load=True, grad=False,
-                  append_coords=False):
+                  njobs=multiprocessing.cpu_count() - 2, load=True, grad=False):
     """"""
     # --
     tstart = _start("Training or loading classifier.")
@@ -166,9 +169,6 @@ def rf_classifier(fpath, train, trainv, test, testv, ndays, bool_label=True,
     # -- If bool_label, convert to True for residential and False else.
     if bool_label:
         train_labels = (train_labels == 1).astype(int)
-    if append_coords:
-        coords = np.array([lc.coords[ii] for ii in traink * ndays])
-        train = np.concatenate([train, coords], axis=1)
     if load: # -- Load existing classifier.
         clf = joblib.load(fpath)
     else: # -- Fit a classifier.
@@ -434,7 +434,7 @@ def fft_main(lc, ds_size=False):
 
 
 def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
-         append_coords=False):
+         append_coords=False, gaussian_diff=False, gd_append=False):
     """"""
     # --
     tstart = _start("Classify with full fft.")
@@ -442,8 +442,12 @@ def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
     [traink, trainv], [testk, testv] = traintestsplit(lc)
     # -- Load data into and 3D numpy array.
     data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
+    # --
+    lcs = [dd["data"] for dd in data.values()]
+    ons = [dd["ons"] for dd in data.values()]
+    offs = [dd["offs"] for dd in data.values()]
     # -- Split data into train and test (optionally downsample).
-    train, test, ndays = split_data(data, traink, testk)
+    train, test, ndays = split_data(lcs, traink, testk)
     # -- Downsample if vals is passed.
     if ds_size:
         train = downsample(train, ds_size)
@@ -453,12 +457,23 @@ def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
         std = np.concatenate([train, test], axis=0).std(axis=0)
         train /= std
         test /= std
+    # --
+    if gaussian_diff:
+        train = train[:, 2:] - train[:, :-2]
+        test = test[:, 2:] - test[:, :-2]
+    # --
+    if gd_append:
+        train = np.concatenate([train, train[:, 2:] - train[:, :-2]], axis=1)
+        test = np.concatenate([test, test[:, 2:] - test[:, :-2]], axis=1)
+    # --
     if append_coords:
-        coords = np.array([lc.coords[ii] for ii in testk * ndays])
-        test = np.concatenate([test, coords], axis=1)
+        train_coords = np.array([lc.coords[ii] for ii in traink * ndays])
+        test_coords = np.array([lc.coords[ii] for ii in testk * ndays])
+        train = np.concatenate([train, train_coords], axis=1)
+        test = np.concatenate([test, test_coords], axis=1)
     # -- Train random forest and predict.
     clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load,
-        grad=grad, append_coords=append_coords)
+        grad=grad)
     preds = clf.predict(test)
     # -- Check if voting changes the results with various break points.
     print("Vote Comparison:")
