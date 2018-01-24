@@ -92,9 +92,8 @@ def high_pass_subtraction(dtrend, width=360):
     """"""
     # -- Print status.
     tstart = _start("High pass subtraction.")
-    lcs_hp = gf(dtrend, (width, 0))
+    lcs_hp = gf(dtrend, (0, width))
     lcs_diff = dtrend - lcs_hp
-
     # -- Print status.
     _finish(tstart)
     return lcs_diff
@@ -112,9 +111,9 @@ def gaussian_differences(lcs_diff, delta=2):
     # -- Print status.
     tstart = _start("Calculating gaussian differences.")
     lcs_gd = np.ma.zeros(lcs_diff.shape, dtype=lcs_diff.dtype)
-    lcs_gd[delta // 2: -delta // 2] = lcs_diff[delta:] - lcs_diff[:-delta]
+    lcs_gd[delta // 2: -delta // 2] = lcs_diff[delta:, :] - lcs_diff[:-delta, :]
     lcs_gd.mask = np.zeros_like(lcs_diff.mask)
-    lcs_gd.mask[delta // 2: -delta // 2] = (lcs_diff.mask[delta:] * lcs_diff.mask[:-delta])
+    lcs_gd.mask[delta // 2: -delta // 2] = (lcs_diff.mask[delta:, :] * lcs_diff.mask[:-delta, :])
     # -- Print status.
     _finish(tstart)
     return lcs_gd
@@ -319,6 +318,8 @@ class CLI(object):
         """Calculate values for night current loaded in lc."""
         dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs = main(lc)
         plot_bigoffs(dtrend, bigoffs)
+        plot_bigoffs(lcs_diff, bigoffs)
+        plot_bigoffs(lcs_gd, bigoffs)
 
 
     def write_files(self):
