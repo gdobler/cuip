@@ -90,6 +90,7 @@ def traintestsplit(lc, train_split=0.7, seed=5):
     return [[traink, trainv], [testk, testv]]
 
 
+
 def stack_nights(path):
     """Load detrended ligtcurves and stack if there are no masked values.
     Args:
@@ -433,8 +434,71 @@ def fft_main(lc, ds_size=False):
             "clf": clf, "preds": preds})
 
 
+def recursive_rfc(lc, rf_file, ds_size=False, load=True, whiten=True,
+        append_coords=False):
+    """"""
+    # --
+    tstart = _start("Classify with recursive random forest.")
+    # -- Split keys into train and test set,
+    [traink, trainv], [testk, testv] = traintestsplit(lc)
+    # -- Load data into and 3D numpy array.
+    data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
+    # --
+    lcs  = [dd["data"] for dd in data.values()]
+    ons  = [dd["ons"] for dd in data.values()]
+    offs = [dd["offs"] for dd in data.values()]
+    # -- Split data into train and test (optionally downsample).
+    train, test, ndays = split_data(lcs, traink, testk)
+    # -- Downsample if vals is passed.
+    if ds_size:
+        train = downsample(train, ds_size)
+        test  = downsample(test, ds_size)
+    # -- Whiten data.
+    if whiten:
+        std = np.concatenate([train, test], axis=0).std(axis=0)
+        train /= std
+        test  /= std
+    # --
+    if append_coords:
+        train_coords = np.array([lc.coords[ii] for ii in traink * ndays])
+        test_coords = np.array([lc.coords[ii] for ii in testk * ndays])
+        train = np.concatenate([train, train_coords], axis=1)
+        test = np.concatenate([test, test_coords], axis=1)
+    # --
+    train_labels = (np.array(trainv * ndays) == 1).astype(int)
+    test_labels  = (np.array(testv * ndays) == 1).astype(int)
+    # -- Train random forest and predict.
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0,
+        class_weight="balanced", n_jobs=njobs, verbose=5)
+    # --
+    for _ in range(10):
+        clf.fit(train, train_labels)
+        # --
+        preds = clf.predict(test)
+        # -- Check if voting changes the results with various break points.
+        print("Vote Comparison:")
+        for ii in np.array(range(20)) / 20.:
+            votes_comparison(preds, np.array(list(np.split(test_labels, ndays))[0]), ndays, ii)
+        # print(confusion_matrix((np.array(np.array(list(np.split(test_labels, ndays))[0]) * ndays) == 1).astype(int), preds))
+        # --
+        df = pd.DataFrame([np.array(testk * ndays), test_labels, preds]).T
+        df.columns = ["coords", "labels", "preds"]
+        df["bbls"] = [lc.coords_bbls[ii] for ii in df["coords"]]
+        grpb = df.groupby("bbls").mean()
+        grpb["pred_lab"] = (grpb["preds"] > 0.15).astype(float)
+        df = df.merge(grpb[["pred_lab"]], left_on="bbls", right_index=True)
+        test_labels_r = df.pred_lab.values
+        # --
+        test = train[:len(test)]
+        test_labels =  train_labels[:len(test_labels)]
+        train = np.append(train[len(test):], test, axis=0)
+        train_labels = np.append(train_labels[len(test_labels):],
+            df.pred_lab.values, axis=0)
+
+
 def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
-         append_coords=False, gaussian_diff=False, gd_append=False):
+         append_coords=False, gaussian_diff=False, gd_append=False,
+         append_onsoffs=False):
     """"""
     # --
     tstart = _start("Classify with full fft.")
@@ -443,34 +507,41 @@ def main(lc, rf_file, ds_size=False, load=True, whiten=True, grad=False,
     # -- Load data into and 3D numpy array.
     data = stack_nights(os.path.join(lc.path_out, "onsoffs"))
     # --
-    lcs = [dd["data"] for dd in data.values()]
-    ons = [dd["ons"] for dd in data.values()]
+    lcs  = [dd["data"] for dd in data.values()]
+    ons  = [dd["ons"] for dd in data.values()]
     offs = [dd["offs"] for dd in data.values()]
     # -- Split data into train and test (optionally downsample).
     train, test, ndays = split_data(lcs, traink, testk)
     # -- Downsample if vals is passed.
     if ds_size:
         train = downsample(train, ds_size)
-        test = downsample(test, ds_size)
+        test  = downsample(test, ds_size)
     # -- Whiten data.
     if whiten:
         std = np.concatenate([train, test], axis=0).std(axis=0)
         train /= std
-        test /= std
+        test  /= std
     # --
     if gaussian_diff:
         train = train[:, 2:] - train[:, :-2]
-        test = test[:, 2:] - test[:, :-2]
+        test  = test[:, 2:] - test[:, :-2]
     # --
     if gd_append:
         train = np.concatenate([train, train[:, 2:] - train[:, :-2]], axis=1)
-        test = np.concatenate([test, test[:, 2:] - test[:, :-2]], axis=1)
+        test  = np.concatenate([test, test[:, 2:] - test[:, :-2]], axis=1)
     # --
     if append_coords:
         train_coords = np.array([lc.coords[ii] for ii in traink * ndays])
         test_coords = np.array([lc.coords[ii] for ii in testk * ndays])
         train = np.concatenate([train, train_coords], axis=1)
         test = np.concatenate([test, test_coords], axis=1)
+    if append_onsoffs:
+        train_ons, test_ons, _ = split_data(ons, traink, testk)
+        train_offs, test_offs, _ = split_data(offs, traink, testk)
+        train = np.concatenate([train, train_ons.sum(axis=1),
+            train_offs.sum(axis=1)], axis=1)
+        test = np.concatenate([test, test_ons.sum(axis=1),
+            test_offs.sum(axis=1)], axis=1)
     # -- Train random forest and predict.
     clf = rf_classifier(rf_file, train, trainv, test, testv, ndays, load=load,
         grad=grad)
