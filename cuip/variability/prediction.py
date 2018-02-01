@@ -131,6 +131,10 @@ def bbl_split(lc, crds, data, train_size=0.7, seed=1, excl_bbl=False):
     # -- Print status.
     _finish(tstart)
     _ = _start("Train N: {}, Test N: {}".format(trn_labs.size, tst_labs.size))
+    _ = _start("Training -- Res: {}, Non-Res: {}, Sum: {}".format(
+        sum(trn_labs == 1) / 74, sum(trn_labs != 1) / 74, trn_labs.size / 74))
+    _ = _start("Testing -- Res: {}, Non-Res: {}, Sum: {}".format(
+        sum(tst_labs == 1) / 74, sum(tst_labs != 1) / 74, tst_labs.size / 74))
     actual_split = 1. * trn_labs.size / (trn_labs.size + tst_labs.size)
     _ = _start("Actual Split: {:.2f}".format(actual_split))
     return [trn_coords, trn_data, trn_labs, tst_coords, tst_data, tst_labs]
@@ -158,6 +162,7 @@ def score(preds, tst_labs, conf=True, split=False):
         _ = _start("Confusion matrix: {}".format([list(cf[0]), list(cf[1])]))
     # -- Print scores.
     _ = _start(txt)
+    return [cf, acc, r_acc, nr_acc]
 
 
 def votescore(preds, tst_labs, ndays=74):
@@ -177,7 +182,24 @@ def votescore(preds, tst_labs, ndays=74):
         score(votes, tst_labs[:len(votes)], False, ii)
 
 
-def preprocess(trn, trn_data, tst, tst_data, whiten=True, append_coords=True):
+def downsample(arr, size):
+    """"""
+    # --
+    tstart = _start("Downsampling data.")
+    # --
+    arr_len = arr.shape[1]
+    # -- Define the padding size required.
+    pad   = int(np.ceil(arr.shape[1] / float(size)) * size - arr.shape[1])
+    # -- Add padding to train/test and take the mean over N values.
+    tmp = np.append(arr, np.zeros((arr.shape[0], pad)) * np.NaN, axis=1)
+    tmp = np.nanmean(tmp.reshape(-1, size), axis=1).reshape(-1, arr_len / size + 1)
+    # --
+    _finish(tstart)
+    return tmp
+
+
+def preprocess(trn, trn_data, tst, tst_data, whiten=True, downsampleN=False,
+    append_coords=True):
     """Options to whiten and append coordinates to training/testing data.
     Args:
         trn (array) - Training coords.
@@ -195,6 +217,9 @@ def preprocess(trn, trn_data, tst, tst_data, whiten=True, append_coords=True):
         std = np.concatenate([trn_data, tst_data], axis=0).std(axis=0)
         trn_data /= std
         tst_data /= std
+    if downsampleN: # -- Downsample by size, if provided.
+        trn_data = downsample(trn_data, downsampleN)
+        tst_data = downsample(tst_data, downsampleN)
     if append_coords: # -- Append the srcs coordinates to the vectors.
         trn_coords = np.array([lc.coords[crd] for crd in trn])
         tst_coords = np.array([lc.coords[crd] for crd in tst])
@@ -203,58 +228,57 @@ def preprocess(trn, trn_data, tst, tst_data, whiten=True, append_coords=True):
     return [trn_data, tst_data]
 
 
-def plot_feature_importance(clf, ordinal=False):
-    """Plot the feature importance of the feature vector, in either real values
-    or ranked order.
-    Args:
-        clf (obj) - sklearn object with .feature_importances_ attribute.
-        ordinal (bool) - Plot real values or rank.
-    """
-    fimp = clf.feature_importances_
-    fig, ax = plt.subplots(figsize=(12, 4))
-    if ordinal:
-        ax.scatter(fimp.argsort(), range(len(fimp)), s=5)
-        ax.set_yticks([])
-        ax.set_ylabel("Ordinal Feature Importance")
-        ax.set_title("Ordinal Feature Importance In RF Classification")
-    else:
-        ax.scatter(range(len(fimp)), fimp, s=5)
-        ax.set_ylabel("Feature Importance")
-        ax.set_title("Feature Importance In RF Classification")
-    ax.set_xticks(np.array(range(8)) * 360)
-    ax.set_xticklabels([21, 22, 23, 24, 1, 2, 3, 4])
-    ax.set_xlabel("Hour")
-    ax.set_xlim(0, len(fimp) + 10)
-    plt.show()
-
-
-def recursive_rf(lc, path, whiten, append_coords, verbose=0, iters=10,
-    excl_bbl=False):
+def train_classifier(lc, clf, days, crds, lcs, ons, offs, seed, excl_bbl=False,
+    whiten=True, append_coords=True, downsampleN=False, coords_only=False):
     """"""
-    days, crds, lcs, ons, offs = load_data(lc, path)
     # -- Train/test split keeping BBLs in the same set.
-    trn, trn_data, trn_labs, val, val_data, val_labs = bbl_split(
-        lc, crds, lcs, train_size=0.8, seed=ii, excl_bbl=excl_bbl)
+    trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
+        lc, crds, lcs, seed=seed, excl_bbl=excl_bbl)
     # -- Whiten and append coords if chosen.
     trn_data, tst_data = preprocess(trn, trn_data, tst, tst_data,
-        whiten=whiten, append_coords=append_coords)
-    # --
-
-
-    # -- Define random forest classifier.
-    clf = RandomForestClassifier(n_estimators=100, random_state=0,
-        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2,
-        verbose=verbose)
-    # -- Fit random forest classifier.
-    tstart = _start("Training RF {}/{}".format(ii, iters))
+        whiten=whiten, append_coords=append_coords, downsampleN=downsampleN)
+    # -- Only use coordinates if passed as arg.
+    if coords_only:
+        trn_data = trn_data[:, -2:]
+        tst_data = tst_data[:, -2:]
+    # if gsearch_params:
+    #     clf = GridSearchCV(clf, gsearch_params)
+    # -- Fit classifier.
+    tstart = _start("Training RF (seed: {})".format(seed))
     clf.fit(trn_data, trn_labs)
     _finish(tstart)
-    # -- Make predictions from the test set.
-    preds = clf.predict(tst_data)
+    # --
+    return [trn_data, trn_labs, tst_data, tst_labs, clf]
+
+
+def main(lc, path, outpath, whiten=True, append_coords=True,
+    iters=100, excl_bbl=False, downsampleN=False, coords_only=False):
+    """"""
+    # -- Load data.
+    days, crds, lcs, ons, offs = load_data(lc, path)
+    # -- Define classifer structure (can replace as needed).
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=3,
+        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
+    for ii in range(1, iters + 1):
+        # -- Train a classifier.
+        trn_data, trn_labs, tst_data, tst_labs, clf = train_classifier(
+            lc, clf, days, crds, lcs, ons, offs, ii, excl_bbl=excl_bbl,
+            whiten=whiten, append_coords=append_coords, downsampleN=downsampleN,
+            coords_only=coords_only)
+        # -- Save classifier to file.
+        fpath = os.path.join(outpath, "rf_seed{}.pkl".format(ii))
+        joblib.dump(clf, fpath)
+        # -- Save predictions
+        preds = clf.predict(tst_data)
+        # --
+        fpath = os.path.join(outpath, "rf_preds_seed{}.npy".format(ii))
+        np.save(fpath, np.array([preds, tst_labs]))
+        # --
+        _ = votescore(preds, tst_labs)
 
 
 def main(lc, path, inpath=False, outpath=False, whiten=True, append_coords=True,
-    verbose=0, iters=1, excl_bbl=False):
+    verbose=0, iters=100, excl_bbl=False, gsearch_params=False):
     """"""
     days, crds, lcs, ons, offs = load_data(lc, path)
     for ii in range(1, iters + 1):
@@ -268,13 +292,17 @@ def main(lc, path, inpath=False, outpath=False, whiten=True, append_coords=True,
         if type(inpath) == str:
             clf = joblib.load(fpath)
         else: # -- Create and save classifier.
-            clf = RandomForestClassifier(n_estimators=100, random_state=0,
+            clf = RandomForestClassifier(n_estimators=1000, random_state=0,
                 class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2,
                 verbose=verbose)
+            if gsearch_params:
+                clf = GridSearchCV(clf, gsearch_params)
             # -- Fit random forest classifier.
             tstart = _start("Training RF {}/{}".format(ii, iters))
             clf.fit(trn_data, trn_labs)
             _finish(tstart)
+            if gsearch_params:
+                clf = clf.best_
             if type(outpath) == str: # -- Save classifier to file.
                 if iters > 1:
                     joblib.dump(clf, outpath[:-4] + "_{}.pkl".format(ii))
@@ -283,7 +311,7 @@ def main(lc, path, inpath=False, outpath=False, whiten=True, append_coords=True,
         # -- Make predictions from the test set.
         preds = clf.predict(tst_data)
         # -- Calculate accuracy scores and voting scores.
-        votescore(preds, tst_labs)
+        _ = votescore(preds, tst_labs)
     return [clf, trn, trn_data, trn_labs, tst, tst_data, tst_labs]
 
 
@@ -305,6 +333,7 @@ def main_excl_bbls(lc, path, greaterN=1, popN=10, iters=1):
     else: # -- If not, iteratively train RFs removing the top N bbl.
         for ii in range(1, popN+1):
             main(lc, path, excl_bbl=bblN[:, 0][-ii])
+
 
 
 if __name__ == "__main__":
