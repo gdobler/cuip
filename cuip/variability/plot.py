@@ -15,6 +15,8 @@ from scipy.misc import factorial
 from scipy.optimize import curve_fit
 from scipy.stats.stats import linregress
 from sklearn.metrics import silhouette_score
+from sklearn.preprocessing import MinMaxScaler
+from scipy.ndimage.filters import gaussian_filter as gf
 
 plt.style.use("ggplot")
 
@@ -1011,6 +1013,168 @@ def plot_correct_predictions(lc, pred_df, lclass, rclass, bg_img=False,
     plt.show(block=True)
 
 
+def plot_preprocessing(lc):
+    """"""
+    data   = MinMaxScaler().fit_transform(lc.lcs)
+    gfdata = MinMaxScaler().fit_transform(gf(lc.lcs, (30, 0)))
+    med    = gf(np.median(gfdata, axis=1), 30)
+    mev = np.vstack([med, np.ones(med.shape)]).T
+    fit = np.matmul(np.linalg.inv(np.matmul(mev.T, mev)),
+                    np.matmul(mev.T, gfdata))
+    model = med * fit[0].reshape(-1, 1) + fit[1].reshape(-1, 1)
+    dtrend = gfdata.T - model
+    # -- Figure
+    fig, ax = plt.subplots(figsize=(12, 6))
+    ax.plot(data[:, 3004], label="Original LC", alpha=0.5)
+    ax.plot(gfdata[:, 3004], label="GF LC", c="k", alpha=0.5)
+    ax.plot(med, label="Median (All LCs)", ls="dashed", c="g")
+    ax.plot(model[3004], label="Fitted Median", ls="dotted", c="g")
+    ax.plot(dtrend[3004], label="Detrended LC", c="k")
+    ax.set_xlim(0, lc.lcs.shape[0])
+    ax.set_yticks([])
+    ax.set_ylabel("Intensity [Arb. Units]")
+    ax.set_xlabel("Timesteps")
+    ax.set_title("Example Preprocessing (Src: 3004, {})".format(lc.night.date()))
+    ax.legend()
+    plt.show()
+
+
+
+
+def eval_n_estimators(lc, path):
+    """"""
+    days, crds, lcs, ons, offs = load_data(lc, path)
+    # --
+    pklpath = os.path.join(lc.path_out, "jvani_pkl")
+    fnames  = os.listdir(pklpath)
+    # --
+    for fname in fnames:
+        _ = _start(fname)
+        # -- Load classifier
+        clf  = joblib.load(os.path.join(pklpath, fname))
+        seed = int(fname[:-4].split("_")[-1])
+        # -- Train/test split keeping BBLs in the same set.
+        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
+            lc, crds, lcs, seed=seed)
+        # -- Whiten and append coords.
+        trn_data, tst_data = preprocess(trn, trn_data, tst, tst_data)
+        # --
+        preds = clf.predict(tst_data)
+        # --
+        np.save("preds_{:03d}.npy".format(seed), np.array([tst_labs, preds]))
+
+
+def summarize_n_estimators(path):
+    """"""
+    acc = []
+    res = []
+    nre = []
+    bst = []
+    for fname in filter(lambda x: x.startswith("preds"), os.listdir(path)):
+        test, pred = np.load(os.path.join(path, fname))
+        vals = zip(test, pred)
+        acc.append(accuracy_score(*zip(*vals)))
+        res.append(accuracy_score(*zip(*filter(lambda x: x[0] == 1, vals))))
+        nre.append(accuracy_score(*zip(*filter(lambda x: x[0] == 0, vals))))
+        src_mn = pred.reshape(74, pred.size / 74).mean(0)
+        scr = []
+        for ii in np.array(range(20)) / 20.:
+            votes = (src_mn > ii).astype(int)
+            v_acc = accuracy_score(test.reshape(74, test.size / 74)[0], votes)
+            scr.append(v_acc)
+        bst.append(scr)
+    return [acc, res, nre, bst]
+
+
+def plot_n_estimator_summary(acc, res, nre, bst):
+    """"""
+    fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(12, 4), sharey=True)
+    for ax, data in zip(fig.axes, [acc, res, nre]):
+        ax.hist(data, 30, label="Histogram")
+        ax.axvline(np.median(data), ls="dashed", label="Median", c="k", alpha=0.5)
+        ax.text(np.median(data) + 0.01, 0.5, "{:.2f}%".format(np.median(data) * 100.),
+                rotation=90, color="w", va="bottom")
+    for ax in fig.axes:
+        ax.set_xlim(0, 1)
+        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.])
+        ax.set_xticklabels([0, 20, 40, 60, 80, 100])
+        ax.set_yticks([])
+    ax2.set_xlabel("Accuracy (%)")
+    ax1.set_title("Overall Source Accuracy", fontsize=12)
+    ax2.set_title("Residential Source Accuracy", fontsize=12)
+    ax3.set_title("Non-Residential Source Accuracy", fontsize=12)
+    ax3.legend()
+    plt.suptitle("Accuracy Results From 308 RFs With Different Train/Test Splits")
+    plt.show()
+
+    fig, axes = plt.subplots(nrows=4, ncols=5, figsize=(4*2, 5*2), sharey=True, sharex=True)
+    for ii, ax in enumerate(fig.axes):
+        ax.set_xlim(0, 1)
+        ax.hist(bst[:, ii], 30, label="Histogram")
+        ax.axvline(np.median(bst[:, ii]), ls="dashed", label="Median", c="k",
+                   alpha=0.5)
+        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.])
+        ax.set_xticklabels([])
+        ax.set_yticks([])
+        ax.text(0.05, 55, ii / 20.)
+        ax.text(0.05, 47, "{:.2f}%".format(np.median(bst[:, ii]) * 100.))
+    fig.axes[2].set_title("Overall Accuracy From Source Voting")
+    fig.axes[-3].set_xlabel("Accuracy (%)")
+    plt.show()
+
+
+def plot_tscoord_featureimportance(clf):
+    """"""
+    imp = clf.feature_importances_
+    crd = imp[-2:]
+    tms = imp[:-2]
+    fig, ax = plt.subplots(figsize=(8, 2))
+    ax.barh([0, 1], [sum(crd), sum(tms)])
+    ax.set_xticks([])
+    ax.set_yticks([0, 1])
+    ax.set_yticklabels(["Coordinates", "Time Series"])
+    ax.set_xlabel("Cumulative RF Feature Importance")
+    ax.set_title("Cumulative RF Feature Importance By Data Source")
+    ax.text(0.01, 1, "N: {}".format(len(tms)), color="w", va="center")
+    ax.text(0.01, 0, "N: 2", color="w", va="center")
+    ax.text(sum(tms) + 0.01, 1, "{:.2f}".format(sum(tms)), color="k", alpha=0.7, va="center")
+    ax.text(sum(crd) + 0.01, 0, "{:.2f}".format(sum(crd)), color="k", alpha=0.7, va="center")
+    ax.set_xlim(0, 1)
+    plt.tight_layout()
+    plt.show()
+
+
+def plot_feature_importance(clf, ordinal=False, sort=False):
+    """Plot the feature importance of the feature vector, in either real values
+    or ranked order.
+    Args:
+        clf (obj) - sklearn object with .feature_importances_ attribute.
+        ordinal (bool) - Plot real values or rank.
+    """
+    fimp = clf.feature_importances_
+    fig, ax = plt.subplots(figsize=(12, 4))
+    if ordinal:
+        ax.scatter(fimp.argsort(), range(len(fimp)), s=5)
+        ax.set_yticks([])
+        ax.set_ylabel("Ordinal Feature Importance")
+        ax.set_title("Ordinal Feature Importance In RF Classification")
+    else:
+        if sort:
+            ax.scatter(range(len(fimp)), fimp[fimp.argsort()], s=5)
+        else:
+            ax.scatter(range(len(fimp)), fimp, s=5)
+        ax.set_ylabel("Feature Importance (log10)")
+        ax.set_title("Feature Importance In RF Classification")
+        ax.set_yscale("log", nonposy='clip')
+        ax.set_ylim(ymin=fimp.min() - 0.0001, ymax=fimp.max() + 0.1)
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels([21, 22, 23, 24, 1, 2, 3, 4])
+    ax.set_xlabel("Hour")
+    if sort:
+        ax.set_xticks([])
+        ax.set_xlabel("")
+    ax.set_xlim(0, len(fimp) + 10)
+    plt.show()
 
 # if __name__ == "__main__":
 #     plot_night_img(lc)
