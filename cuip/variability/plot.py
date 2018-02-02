@@ -6,6 +6,7 @@ import scipy
 import imageio
 import cPickle
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
 import matplotlib.patches as mpatches
@@ -1039,8 +1040,6 @@ def plot_preprocessing(lc):
     plt.show()
 
 
-
-
 def eval_n_estimators(lc, path):
     """"""
     days, crds, lcs, ons, offs = load_data(lc, path)
@@ -1175,6 +1174,192 @@ def plot_feature_importance(clf, ordinal=False, sort=False):
         ax.set_xlabel("")
     ax.set_xlim(0, len(fimp) + 10)
     plt.show()
+
+
+def bbls_to_bldgclass(bblmap):
+    """"""
+    # -- Convert bbl to building class.
+    bbls = np.array([lc.dd_bbl_bldgclss.get(val, np.nan)
+                     for val in bblmap.ravel()]).reshape(*bblmap.shape)
+    bbls = np.array([np.nan if val == "nan" else
+            lc.dd_bldgclss.get([k for k in lc.dd_bldgclss.keys()
+                                if val.startswith(k)][0], np.nan)
+            for val in bbls.ravel()]).reshape(*bbls.shape)
+    return bbls
+
+
+def Fig1Scene(lc):
+    """"""
+    lc.loadnight(lc.meta.index[4])
+    # --
+    plt.style.use("ggplot")
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(4, 10))
+    # --
+    cmap = mcolors.LinearSegmentedColormap.from_list("", ["royalblue", "orange",])
+    # -- Plot example image.
+    img = adjust_img(lc, os.environ["EXIMG"])
+    ax1.imshow(img)
+    # -- Load BBL Map.
+    bbls = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean_bldgclss.npy"))
+    bbls = np.ma.array(bbls, mask=np.isnan(bbls)) == 1
+    ax2.imshow(img)
+    ax2.imshow(bbls, cmap=cmap, alpha=0.3)
+    # -- Plot with sources.
+    ax3.imshow(img)
+    ax3.imshow(bbls, cmap=cmap, alpha=0.2)
+    ryy, rxx = zip(*[lc.coords[k] for k, v in lc.coords_cls.items() if v == 1])
+    nyy, nxx = zip(*[lc.coords[k] for k, v in lc.coords_cls.items() if v != 1])
+    ax3.scatter(np.array(rxx) - 20, np.array(ryy) - 20, marker="x", s=0.2,
+                c="tomato", label="Residential Source")
+    ax3.scatter(np.array(nxx) - 20, np.array(nyy) - 20, marker="x", s=0.2,
+                c="c", label="Commercial Source")
+    ax3.set_xlim(0, bbls.shape[1])
+    # -- Formatting
+    for ii, ax in enumerate([ax1, ax2, ax3]):
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="w",
+                transform=ax.transAxes, family="helvetica")
+    # -- Legend.
+    bp = mpatches.Patch(color="royalblue", label="Non-Residential Building", alpha=0.3)
+    op = mpatches.Patch(color="orange", label="Residential Building", alpha=0.3)
+    bm = plt.scatter([], [], marker="x", c="c", label="Non-Residential Source")
+    om = plt.scatter([], [], marker="x", c="tomato", label="Residential Source")
+    leg = ax3.legend(handles=[bm, om, bp, op], loc="upper center", ncol=2,
+                     bbox_to_anchor=(0.5, -0.01), fontsize=8)
+    plt.tight_layout(h_pad=0.05)
+    plt.setp(leg.texts, family="helvetica")
+    plt.show()
+
+
+def Fig2SourceAcc(path, fname_start):
+    """"""
+    # --
+    regex  = re.compile(fname_start + "(\d+).npy")
+    fnames = sorted(filter(regex.search, os.listdir(path)))
+    # --
+    acc, res, nrs = [], [], []
+    for fname in fnames:
+        pred, test = np.load(os.path.join(path, fname))
+        vals = zip(pred, test)
+        acc.append(accuracy_score(*zip(*vals)))
+        res.append(accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))))
+        nrs.append(accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))))
+    # --
+    fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(8, 2.66))
+    plt.rcParams["font.family"] = "helvetica"
+    for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
+        ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="k",
+                alpha=0.5, transform=ax.transAxes)
+        med = np.median(np.array(vals))
+        ax.axvline(med, ls="dashed", c="k", lw=1, label="Median")
+        ax.text(med + 0.01, 0.5, "{:.2f}%".format(med * 100), rotation=90,
+                color="w", alpha=0.7, va="bottom", fontsize=9)
+        ax.hist(vals, np.array(range(51)) / 50., normed=True)
+        ax.set_xlim(0.4, 0.8)
+        ax.set_xticklabels([40, 50, 60, 70, 80], fontsize=8)
+        ax.set_yticks([])
+    ax1.set_ylabel("Relative Count", fontsize=10)
+    ax2.set_xlabel("Accuracy (%)", fontsize=10)
+    ax3.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
+    plt.tight_layout(w_pad=0.05)
+    plt.show()
+
+
+def Fig3SourceVote(path, fname_start, rsplit=0.5):
+    """"""
+    # --
+    regex  = re.compile(fname_start + "(\d+).npy")
+    fnames = sorted(filter(regex.search, os.listdir(path)))
+    # --
+    acc, res, nrs = [], [], []
+    for fname in fnames:
+        pred, test = np.load(os.path.join(path, fname))
+        _, vacc, vnracc, vracc = votescore(pred, test, rsplit=rsplit)
+        acc.append(vacc)
+        res.append(vracc)
+        nrs.append(vnracc)
+    # --
+    fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(8, 2.66))
+    plt.rcParams["font.family"] = "helvetica"
+    for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
+        ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="k",
+                alpha=0.5, transform=ax.transAxes)
+        med = np.median(np.array(vals))
+        ax.axvline(med, ls="dashed", c="k", lw=1, label="Median")
+        ax.text(med + 1, 0, " {:.2f}%".format(med), rotation=90,
+                color="w", alpha=0.7, va="bottom", fontsize=9)
+        ax.hist(vals, 20, normed=True)
+        ax.set_xlim(35, 100)
+        # ax.set_xticklabels([40, 50, 60, 70, 80], fontsize=8)
+        ax.set_yticks([])
+    ax1.set_ylabel("Relative Count", fontsize=10)
+    ax2.set_xlabel("Accuracy (%)", fontsize=10)
+    ax3.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
+    plt.tight_layout(w_pad=0.05)
+    plt.show()
+
+
+def Fig4VoteNights(path, fname_start, ndays=74):
+    """"""
+    np.random.seed(0)
+    # --
+    regex  = re.compile(fname_start + "(\d+).npy")
+    fnames = sorted(filter(regex.search, os.listdir(path)))
+    # --
+    pred, test = np.load(os.path.join(path, fnames[0]))
+    preds = pred.reshape(ndays, pred.size / ndays)
+    # --
+    labels = test.reshape(ndays, test.size / ndays)[0]
+    data = []
+    for ii in range(1, ndays + 1):
+        arr = []
+        for _ in range(100):
+            idx = np.random.choice(range(ndays), ii, False)
+            vote = (preds[idx].mean(axis=0) > 0.5).astype(int)
+            acc = accuracy_score(vote, labels)
+            arr.append(acc)
+        data.append(arr)
+    data = np.array(data)
+    # --
+    fig, ax1 = plt.subplots(figsize=(5, 3))
+    for xval, yy in enumerate(data):
+        if xval == 0:
+            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2,
+                        label="Sample Accuracy")
+        else:
+            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2)
+    ax1.plot(np.array(range(ndays)) + 1, data.mean(axis=1), label="Mean Accuracy")
+    ax1.set_ylabel("Accuracy (%)", fontsize=10)
+    ax1.set_xlabel("N Observations in Voting", fontsize=10)
+    ax1.set_yticks([0.5, 0.6, 0.7, 0.8])
+    ax1.set_yticklabels([50, 60, 70, 80], fontsize=8)
+    ax1.set_xticklabels(np.array(range(8)) * 10, fontsize=8)
+    ax1.set_xlim(0, ndays + 1)
+    ax1.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
+    plt.tight_layout()
+    plt.show()
+
+
+def Fig5Predictions(path, fname_start, ndays=74):
+    """"""
+    np.random.seed(0)
+    # --
+    regex  = re.compile(fname_start + "(\d+).npy")
+    fnames = sorted(filter(regex.search, os.listdir(path)))
+    # --
+    pred, test = np.load(os.path.join(path, fnames[0]))
+    preds = pred.reshape(ndays, pred.size / ndays)
+    # --
+    labels = test.reshape(ndays, test.size / ndays)[0]
+    # -- Plot example image.
+    fig, ax1 = plt.subplots(figsize=(8, 4))
+    img = adjust_img(lc, os.environ["EXIMG"])
+    ax1.imshow(img)
+    plt.show()
+
+
+
 
 # if __name__ == "__main__":
 #     plot_night_img(lc)
