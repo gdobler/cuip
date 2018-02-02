@@ -165,7 +165,7 @@ def score(preds, tst_labs, conf=True, split=False):
     return [cf, acc, r_acc, nr_acc]
 
 
-def votescore(preds, tst_labs, ndays=74):
+def votescore(preds, tst_labs, ndays=74, rsplit=0.5):
     """Print scores predictions.
     Args:
         preds (array) - predicted labels.
@@ -179,7 +179,11 @@ def votescore(preds, tst_labs, ndays=74):
     src_mn = preds.reshape(ndays, preds.size / ndays).mean(0)
     for ii in np.array(range(20)) / 20.:
         votes = (src_mn > ii).astype(int)
-        score(votes, tst_labs[:len(votes)], False, ii)
+        _ = score(votes, tst_labs[:len(votes)], False, ii)
+        if ii == rsplit:
+             rvals = _
+    if rsplit:
+        return rvals
 
 
 def downsample(arr, size):
@@ -251,68 +255,89 @@ def train_classifier(lc, clf, days, crds, lcs, ons, offs, seed, excl_bbl=False,
     return [trn_data, trn_labs, tst_data, tst_labs, clf]
 
 
-def main(lc, path, outpath, whiten=True, append_coords=True,
-    iters=100, excl_bbl=False, downsampleN=False, coords_only=False):
+def main(lc, path, outpath, pred_fname, clf, whiten=False,
+    append_coords=False, iters=100, excl_bbl=False, downsampleN=False,
+    coords_only=False, clf_name=False):
     """"""
     # -- Load data.
     days, crds, lcs, ons, offs = load_data(lc, path)
-    # -- Define classifer structure (can replace as needed).
-    clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=3,
-        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
     for ii in range(1, iters + 1):
         # -- Train a classifier.
         trn_data, trn_labs, tst_data, tst_labs, clf = train_classifier(
             lc, clf, days, crds, lcs, ons, offs, ii, excl_bbl=excl_bbl,
             whiten=whiten, append_coords=append_coords, downsampleN=downsampleN,
             coords_only=coords_only)
-        # -- Save classifier to file.
-        fpath = os.path.join(outpath, "rf_seed{}.pkl".format(ii))
-        joblib.dump(clf, fpath)
-        # -- Save predictions
+        if clf_name:
+            # -- Save classifier to file.
+            fpath = os.path.join(outpath, clf_fname.format(ii))
+            joblib.dump(clf, fpath)
+        # -- Make and save predictions
         preds = clf.predict(tst_data)
-        # --
-        fpath = os.path.join(outpath, "rf_preds_seed{}.npy".format(ii))
+        fpath = os.path.join(outpath, pred_fname.format(ii))
         np.save(fpath, np.array([preds, tst_labs]))
-        # --
+        # -- Print out of accuracy.
         _ = votescore(preds, tst_labs)
 
 
-def main(lc, path, inpath=False, outpath=False, whiten=True, append_coords=True,
-    verbose=0, iters=100, excl_bbl=False, gsearch_params=False):
+def main_main(lc, path, outpath):
     """"""
-    days, crds, lcs, ons, offs = load_data(lc, path)
-    for ii in range(1, iters + 1):
-        # -- Train/test split keeping BBLs in the same set.
-        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
-            lc, crds, lcs, seed=ii, excl_bbl=excl_bbl)
-        # -- Whiten and append coords if chosen.
-        trn_data, tst_data = preprocess(trn, trn_data, tst, tst_data,
-            whiten=whiten, append_coords=append_coords)
-        # -- Load classifier if it exists.
-        if type(inpath) == str:
-            clf = joblib.load(fpath)
-        else: # -- Create and save classifier.
-            clf = RandomForestClassifier(n_estimators=1000, random_state=0,
-                class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2,
-                verbose=verbose)
-            if gsearch_params:
-                clf = GridSearchCV(clf, gsearch_params)
-            # -- Fit random forest classifier.
-            tstart = _start("Training RF {}/{}".format(ii, iters))
-            clf.fit(trn_data, trn_labs)
-            _finish(tstart)
-            if gsearch_params:
-                clf = clf.best_
-            if type(outpath) == str: # -- Save classifier to file.
-                if iters > 1:
-                    joblib.dump(clf, outpath[:-4] + "_{}.pkl".format(ii))
-                else:
-                    joblib.dump(clf, outpath)
-        # -- Make predictions from the test set.
-        preds = clf.predict(tst_data)
-        # -- Calculate accuracy scores and voting scores.
-        _ = votescore(preds, tst_labs)
-    return [clf, trn, trn_data, trn_labs, tst, tst_data, tst_labs]
+    # -- Max depth = 3.
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=3,
+        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
+    # # -- Coords only.
+    # main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+    #     "rf_coords_only_mdepth3_{:03d}.npy", clf, append_coords=True,
+    #     coords_only=True)
+    # -- Only lcs.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepth3_{:03d}.npy", clf, whiten=True)
+    # -- Only lcs, 5min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepth3__ds30_{:03d}.npy", clf, whiten=True, downsampleN=30)
+    # -- Only lcs, 10min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+        "rf_lcs_only_mdepth3__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
+    # -- lcs with coords.
+    main(lc, os.path.join(lc.path_out, "onsoffs"),  outpath,
+        "rf_full_mdepth3_{:03d}.npy", clf, whiten=True, append_coords=True)
+    # -- Max depth = 6.
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=6,
+        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
+    # -- Coords only.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+        "rf_coords_only_mdepth6_{:03d}.npy", clf, append_coords=True,
+        coords_only=True)
+    # -- Only lcs.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+        "rf_lcs_only_mdepth6_{:03d}.npy", clf, whiten=True)
+    # -- Only lcs, 5min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepth6__ds30_{:03d}.npy", clf, whiten=True, downsampleN=30)
+    # -- Only lcs, 10min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepth6__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
+    # -- Lcs with coords.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_full_mdepth6_{:03d}.npy", clf, whiten=True, append_coords=True)
+    # -- No max depth.
+    clf = RandomForestClassifier(n_estimators=1000, random_state=0,
+        class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
+    # -- Coords only.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_coords_only_mdepthinf_{:03d}.npy", clf, append_coords=True,
+         coords_only=True)
+    # -- Only lcs.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepthinf_{:03d}.npy", clf, whiten=True)
+    # -- Only lcs, 5min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepthinf__ds30_{:03d}.npy", clf, whiten=True, downsampleN=30)
+    # -- Only lcs, 10min downsample.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_lcs_only_mdepthinf__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
+    # -- Lcs with coords.
+    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
+         "rf_full_mdepthinf_{:03d}.npy", clf, whiten=True, append_coords=True)
 
 
 def main_excl_bbls(lc, path, greaterN=1, popN=10, iters=1):
