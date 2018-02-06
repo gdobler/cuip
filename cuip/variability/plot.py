@@ -1256,8 +1256,9 @@ def Fig2SourceAcc(path, fname_start):
         ax.text(med + 0.01, 0.5, "{:.2f}%".format(med * 100), rotation=90,
                 color="w", alpha=0.7, va="bottom", fontsize=9)
         ax.hist(vals, np.array(range(51)) / 50., normed=True)
-        ax.set_xlim(0.4, 0.8)
-        ax.set_xticklabels([40, 50, 60, 70, 80], fontsize=8)
+        ax.set_xlim(0.4, 1)
+        ax.set_xticks((np.array(range(7)) + 4) / 10.)
+        ax.set_xticklabels((np.array(range(7)) + 4) * 10, fontsize=8)
         ax.set_yticks([])
     ax1.set_ylabel("Relative Count", fontsize=10)
     ax2.set_xlabel("Accuracy (%)", fontsize=10)
@@ -1341,33 +1342,125 @@ def Fig4VoteNights(path, fname_start, ndays=74):
     plt.show()
 
 
-def Fig5Predictions(path, fname_start, ndays=74):
+def Fig5Predictions(fpath, fname_start, path, ndays=74):
     """"""
     np.random.seed(0)
     # --
     regex  = re.compile(fname_start + "(\d+).npy")
-    fnames = sorted(filter(regex.search, os.listdir(path)))
+    fnames = sorted(filter(regex.search, os.listdir(fpath)))
     # --
-    pred, test = np.load(os.path.join(path, fnames[0]))
-    preds = pred.reshape(ndays, pred.size / ndays)
+    days, crds, lcs, ons, offs = load_data(lc, path)
     # --
-    labels = test.reshape(ndays, test.size / ndays)[0]
-    # -- Plot example image.
-    fig, ax1 = plt.subplots(figsize=(8, 4))
+    data = []
+    data1 = []
+    for fname in fnames:
+        _ = _start("Loading {}".format(fname))
+        # -- Load results and conduct vote.
+        pred, test = np.load(os.path.join(fpath, fname))
+        votes  = (pred.reshape(ndays, pred.size / ndays).mean(axis=0) > 0.5).astype(int)
+        labels = test.reshape(ndays, test.size / ndays)[0]
+        # -- Split data to match results.
+        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
+            lc, crds, lcs, seed=int(fname[len(fname_start): -4]))
+        idx = tst[:labels.size]
+        coords = [lc.coords[ii] for ii in idx]
+        # --
+        df = pd.DataFrame(coords, columns=["yy", "xx"])
+        df.index = idx
+        df["votes"], df["labs"] = votes, labels
+        df["correct"] = df["votes"] == df["labs"]
+        data.append(df)
+        # --
+        df1 = pd.DataFrame(tst)
+        df1["labs"] = tst_labs
+        df1["preds"] = pred
+        data1.append(df1)
+    df = pd.concat(data, axis=0)
+    df = df.groupby(df.index).mean()
+    df1 = pd.concat(data1, axis=0)
+    df1.columns = ["idx", "labs", "votes"]
+    df1 = df1.groupby("idx").mean()
+    coords = [lc.coords[ii] for ii in df1.index]
+    df1["yy"], df1["xx"] = zip(*coords)
+    df = df1
+    # -- Split data for plotting.
+    dfr  = df[df.labs == 1.]
+    dfrc = dfr[dfr.votes > 0.5]
+    dfrw = dfr[dfr.votes <= 0.5]
+    dfn  = df[df.labs == 0.]
+    dfnc = dfn[dfn.votes <=0.5]
+    dfnw = dfn[dfn.votes > 0.5]
+    # -- Create colormap.
+    cmap = mcolors.LinearSegmentedColormap.from_list("",
+        ["royalblue", "royalblue", "royalblue", "red", "orange", "orange", "orange"])
+    # -- Create figure.
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(4, 6.66),
+        gridspec_kw={"height_ratios": [1, 1, 0.05,]})
+    # -- Load and adjust images.
     img = adjust_img(lc, os.environ["EXIMG"])
-    ax1.imshow(img)
+    # -- For plots with image backgrounds, set those.
+    for ii, ax in enumerate([ax1, ax2]):
+        ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="w",
+                transform=ax.transAxes, family="helvetica")
+        ax.imshow(img.mean(-1), cmap="gist_gray")
+        ax.set_xticks([])
+        ax.set_yticks([])
+        ax.set_xlim(0, img.shape[1])
+    # --
+    ax1.scatter(dfr.xx -20, dfr.yy - 20, c=dfr.votes, cmap=cmap, s=5, marker="s")
+    cval = ax2.scatter(dfn.xx -20, dfn.yy - 20, c=dfn.votes, cmap=cmap, s=5, marker="s", vmax=1, vmin=0)
+    cbar = plt.colorbar(cval, cax=ax3, orientation="horizontal")
+    cbar.set_ticks([0., 0.4, 0.5, 0.6, 1.])
+    cbar.ax.set_xticklabels(["Non-Res. 100%", "60%", "50%", "60%", "Res. 100%"], fontsize=8)
+    cbar.set_clim(0, 1)
+    plt.tight_layout(h_pad=0.05)
+    plt.show()
+    # --
+    fig, ax1 = plt.subplots(figsize=(4, 3.33))
+    ax1.imshow(img.mean(-1), cmap="gist_gray")
+    ax1.set_xticks([])
+    ax1.set_yticks([])
+    ax1.set_xlim(0, img.shape[1])
+    ax1.scatter(dfrc.xx - 20, dfrc.yy - 20, marker="s", color="orange", s=2, label="Correctly Classified Residential Source")
+    ax1.scatter(dfrw.xx - 20, dfrw.yy - 20, marker="s", color="r", s=2, label="Incorrectly Classified Residential Source")
+    ax1.scatter(dfnc.xx - 20, dfnc.yy - 20, marker="s", color="c", s=2, label="Correctly Classified Non-Residential Source")
+    ax1.scatter(dfnw.xx - 20, dfnw.yy - 20, marker="s", color="b", s=2, label="Incorrectly Classified Non-Residential Source")
+    lgd = ax1.legend(ncol=2, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.01))
+    for ii in lgd.legendHandles:
+        ii._sizes = [6]
     plt.show()
 
 
 
-
-# if __name__ == "__main__":
-#     plot_night_img(lc)
-#     plot_lightcurve_line(lc, 136)
-#     plot_winter_summer_bigoffs_boxplot(lc, res=True)
-#     plot_winter_summer_hist(lc)
-#     plot_appertures(lc)
-#     plot_bbls(lc)
-#     plot_bldgclass(lc)
-#     plot_arbclass(lc)
-#     plot_acs_income(lc)
+def Fig6Comparison(fpath):
+    """"""
+    fstarts = np.unique([fname[:-7] for fname in os.listdir(fpath)])
+    for fstart in sorted(fstarts):
+        print(fstart)
+        # Fig2SourceAcc(fpath, fstart)
+        # Fig3SourceVote(fpath, fstart, rsplit=0.5)
+        # --
+        # regex  = re.compile(fstart + "(\d+).npy")
+        # fnames = sorted(filter(regex.search, os.listdir(path)))
+        # # --
+        # acc, res, nrs = [], [], []
+        # for fname in fnames:
+        #     pred, test = np.load(os.path.join(path, fname))
+        #     vals = zip(pred, test)
+        #     acc.append(accuracy_score(*zip(*vals)))
+        #     res.append(accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))))
+        #     nrs.append(accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))))
+        # --
+        regex  = re.compile(fstart + "(\d+).npy")
+        fnames = sorted(filter(regex.search, os.listdir(path)))
+        # --
+        acc, res, nrs = [], [], []
+        for fname in fnames:
+            pred, test = np.load(os.path.join(path, fname))
+            _, vacc, vnracc, vracc = votescore(pred, test, rsplit=rsplit, pp=False)
+            acc.append(vacc)
+            res.append(vracc)
+            nrs.append(vnracc)
+        print("Acc: {}".format(np.median(acc)))
+        print("Res Acc: {}".format(np.median(res)))
+        print("Non-Res Acc: {}".format(np.median(nrs)))
