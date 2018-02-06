@@ -9,7 +9,7 @@ import multiprocessing
 import matplotlib.pyplot as plt
 from collections import Counter
 from sklearn.externals import joblib
-from sklearn.metrics import confusion_matrix
+from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.ensemble import RandomForestClassifier
 
 plt.style.use("ggplot")
@@ -140,7 +140,7 @@ def bbl_split(lc, crds, data, train_size=0.7, seed=1, excl_bbl=False):
     return [trn_coords, trn_data, trn_labs, tst_coords, tst_data, tst_labs]
 
 
-def score(preds, tst_labs, conf=True, split=False):
+def score(preds, tst_labs, split=False, pp=True):
     """Print accuracy scores.
     Args:
         preds (array) - Predicted labels.
@@ -158,28 +158,25 @@ def score(preds, tst_labs, conf=True, split=False):
         .format(acc, r_acc, nr_acc)
     if type(split) != bool: # -- If a split value is supplied, add to existing text.
         txt = "Split: {:.2f} ".format(split) + txt
-    if conf == True:   # -- If chosen, print confusion matrix.
+    if pp == True:   # -- If chosen, print confusion matrix.
         _ = _start("Confusion matrix: {}".format([list(cf[0]), list(cf[1])]))
-    # -- Print scores.
-    _ = _start(txt)
+        _ = _start(txt)
     return [cf, acc, r_acc, nr_acc]
 
 
-def votescore(preds, tst_labs, ndays=74, rsplit=0.5):
+def votescore(preds, tst_labs, ndays=74, rsplit=0.5, pp=True):
     """Print scores predictions.
     Args:
         preds (array) - predicted labels.
         tst_labs (array) - actual labels.
     """
     # -- Print scores for individual sources
-    score(preds, tst_labs)
-    # -- Calculate results for voting on sources accross days.
-    _ = _start("Vote Comparison")
+    score(preds, tst_labs, pp=pp)
     # -- Take the mean prediction across days for each source.
     src_mn = preds.reshape(ndays, preds.size / ndays).mean(0)
     for ii in np.array(range(20)) / 20.:
         votes = (src_mn > ii).astype(int)
-        _ = score(votes, tst_labs[:len(votes)], False, ii)
+        _ = score(votes, tst_labs[:len(votes)], False, pp=pp)
         if ii == rsplit:
              rvals = _
     if rsplit:
