@@ -1188,12 +1188,12 @@ def bbls_to_bldgclass(bblmap):
     return bbls
 
 
-def Fig1Scene(lc):
+def Fig1Scene(lc, save=False):
     """"""
     lc.loadnight(lc.meta.index[4])
     # --
     plt.style.use("ggplot")
-    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(4, 10))
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(7, 10))
     # --
     cmap = mcolors.LinearSegmentedColormap.from_list("", ["royalblue", "orange",])
     # -- Plot example image.
@@ -1209,30 +1209,32 @@ def Fig1Scene(lc):
     ax3.imshow(bbls, cmap=cmap, alpha=0.2)
     ryy, rxx = zip(*[lc.coords[k] for k, v in lc.coords_cls.items() if v == 1])
     nyy, nxx = zip(*[lc.coords[k] for k, v in lc.coords_cls.items() if v != 1])
-    ax3.scatter(np.array(rxx) - 20, np.array(ryy) - 20, marker="x", s=0.2,
-                c="tomato", label="Residential Source")
-    ax3.scatter(np.array(nxx) - 20, np.array(nyy) - 20, marker="x", s=0.2,
-                c="c", label="Commercial Source")
+    ax3.scatter(np.array(rxx) - 20, np.array(ryy) - 20, marker="s", s=2,
+                c="orange", label="Residential Source")
+    ax3.scatter(np.array(nxx) - 20, np.array(nyy) - 20, marker="s", s=2,
+                c="royalblue", label="Commercial Source")
     ax3.set_xlim(0, bbls.shape[1])
     # -- Formatting
     for ii, ax in enumerate([ax1, ax2, ax3]):
         ax.set_xticks([])
         ax.set_yticks([])
         ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="w",
-                transform=ax.transAxes, family="helvetica")
+                transform=ax.transAxes, family="helvetica", fontsize=16)
     # -- Legend.
     bp = mpatches.Patch(color="royalblue", label="Non-Residential Building", alpha=0.3)
     op = mpatches.Patch(color="orange", label="Residential Building", alpha=0.3)
-    bm = plt.scatter([], [], marker="x", c="c", label="Non-Residential Source")
-    om = plt.scatter([], [], marker="x", c="tomato", label="Residential Source")
+    bm = plt.scatter([], [], marker="s", c="royalblue", label="Non-Residential Source")
+    om = plt.scatter([], [], marker="s", c="orange", label="Residential Source")
     leg = ax3.legend(handles=[bm, om, bp, op], loc="upper center", ncol=2,
-                     bbox_to_anchor=(0.5, -0.01), fontsize=8)
-    plt.tight_layout(h_pad=0.05)
+                     bbox_to_anchor=(0.5, -0.01), fontsize=12)
+    plt.tight_layout(h_pad=0.1)
     plt.setp(leg.texts, family="helvetica")
+    if save:
+        fig.savefig("Scene.png", bbox_inches="tight")
     plt.show()
 
 
-def Fig2SourceAcc(path, fname_start):
+def Fig2SourceAcc(path, fname_start, save=False):
     """"""
     # --
     regex  = re.compile(fname_start + "(\d+).npy")
@@ -1250,24 +1252,25 @@ def Fig2SourceAcc(path, fname_start):
     plt.rcParams["font.family"] = "helvetica"
     for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
         ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="k",
-                alpha=0.5, transform=ax.transAxes)
+                alpha=0.5, transform=ax.transAxes, fontsize=16)
         med = np.median(np.array(vals))
         ax.axvline(med, ls="dashed", c="k", lw=1, label="Median")
-        ax.text(med + 0.01, 0.5, "{:.2f}%".format(med * 100), rotation=90,
-                color="w", alpha=0.7, va="bottom", fontsize=9)
         ax.hist(vals, np.array(range(51)) / 50., normed=True)
         ax.set_xlim(0.4, 1)
         ax.set_xticks((np.array(range(7)) + 4) / 10.)
-        ax.set_xticklabels((np.array(range(7)) + 4) * 10, fontsize=8)
+        ax.set_xticklabels((np.array(range(7)) + 4) * 10, fontsize=10)
         ax.set_yticks([])
-    ax1.set_ylabel("Relative Count", fontsize=10)
-    ax2.set_xlabel("Accuracy (%)", fontsize=10)
-    ax3.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
+    ax1.set_ylabel("Relative Count", fontsize=12)
+    ax2.set_xlabel("Accuracy (%)", fontsize=12)
+    ax3.legend(prop=mpl.font_manager.FontProperties(size=12), frameon=False,
+        bbox_to_anchor=(1.05, 1.05), loc="upper right")
     plt.tight_layout(w_pad=0.05)
+    if save:
+        fig.savefig("SourceAcc.png", bbox_inches="tight")
     plt.show()
 
 
-def Fig3SourceVote(path, fname_start, rsplit=0.5):
+def Fig3VoteAcc(path, fname_start, rsplit=0.5, save=False):
     """"""
     # --
     regex  = re.compile(fname_start + "(\d+).npy")
@@ -1285,64 +1288,25 @@ def Fig3SourceVote(path, fname_start, rsplit=0.5):
     plt.rcParams["font.family"] = "helvetica"
     for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
         ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="k",
-                alpha=0.5, transform=ax.transAxes)
+                alpha=0.5, transform=ax.transAxes, fontsize=16)
         med = np.median(np.array(vals))
         ax.axvline(med, ls="dashed", c="k", lw=1, label="Median")
-        ax.text(med + 1, 0, " {:.2f}%".format(med), rotation=90,
-                color="w", alpha=0.7, va="bottom", fontsize=9)
-        ax.hist(vals, 20, normed=True)
+        ax.hist(vals, np.array(range(51)) / .5, normed=True)
         ax.set_xlim(35, 100)
-        # ax.set_xticklabels([40, 50, 60, 70, 80], fontsize=8)
+        ax.set_xticks([40, 50, 60, 70, 80, 90, 100])
+        ax.set_xticklabels([40, 50, 60, 70, 80, 90, 100], fontsize=10)
         ax.set_yticks([])
-    ax1.set_ylabel("Relative Count", fontsize=10)
-    ax2.set_xlabel("Accuracy (%)", fontsize=10)
-    ax3.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
+    ax1.set_ylabel("Relative Count", fontsize=12)
+    ax2.set_xlabel("Accuracy (%)", fontsize=12)
+    ax3.legend(prop=mpl.font_manager.FontProperties(size=12), frameon=False,
+        bbox_to_anchor=(1.05, 1.05), loc="upper right")
     plt.tight_layout(w_pad=0.05)
+    if save:
+        fig.savefig("VoteAcc.png", bbox_inches="tight")
     plt.show()
 
 
-def Fig4VoteNights(path, fname_start, ndays=74):
-    """"""
-    np.random.seed(0)
-    # --
-    regex  = re.compile(fname_start + "(\d+).npy")
-    fnames = sorted(filter(regex.search, os.listdir(path)))
-    # --
-    pred, test = np.load(os.path.join(path, fnames[0]))
-    preds = pred.reshape(ndays, pred.size / ndays)
-    # --
-    labels = test.reshape(ndays, test.size / ndays)[0]
-    data = []
-    for ii in range(1, ndays + 1):
-        arr = []
-        for _ in range(100):
-            idx = np.random.choice(range(ndays), ii, False)
-            vote = (preds[idx].mean(axis=0) > 0.5).astype(int)
-            acc = accuracy_score(vote, labels)
-            arr.append(acc)
-        data.append(arr)
-    data = np.array(data)
-    # --
-    fig, ax1 = plt.subplots(figsize=(5, 3))
-    for xval, yy in enumerate(data):
-        if xval == 0:
-            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2,
-                        label="Sample Accuracy")
-        else:
-            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2)
-    ax1.plot(np.array(range(ndays)) + 1, data.mean(axis=1), label="Mean Accuracy")
-    ax1.set_ylabel("Accuracy (%)", fontsize=10)
-    ax1.set_xlabel("N Observations in Voting", fontsize=10)
-    ax1.set_yticks([0.5, 0.6, 0.7, 0.8])
-    ax1.set_yticklabels([50, 60, 70, 80], fontsize=8)
-    ax1.set_xticklabels(np.array(range(8)) * 10, fontsize=8)
-    ax1.set_xlim(0, ndays + 1)
-    ax1.legend(prop=mpl.font_manager.FontProperties(size=8), frameon=False)
-    plt.tight_layout()
-    plt.show()
-
-
-def Fig5Predictions(fpath, fname_start, path, ndays=74):
+def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
     """"""
     np.random.seed(0)
     # --
@@ -1394,14 +1358,14 @@ def Fig5Predictions(fpath, fname_start, path, ndays=74):
     cmap = mcolors.LinearSegmentedColormap.from_list("",
         ["royalblue", "royalblue", "royalblue", "red", "orange", "orange", "orange"])
     # -- Create figure.
-    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(4, 6.66),
-        gridspec_kw={"height_ratios": [1, 1, 0.05,]})
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(7, 8),
+        gridspec_kw={"height_ratios": [1, 1, 0.05]})
     # -- Load and adjust images.
     img = adjust_img(lc, os.environ["EXIMG"])
     # -- For plots with image backgrounds, set those.
     for ii, ax in enumerate([ax1, ax2]):
         ax.text(0.01, 0.97, "abc"[ii] + ")", ha="left", va="top", color="w",
-                transform=ax.transAxes, family="helvetica")
+                transform=ax.transAxes, family="helvetica", fontsize=16)
         ax.imshow(img.mean(-1), cmap="gist_gray")
         ax.set_xticks([])
         ax.set_yticks([])
@@ -1411,12 +1375,17 @@ def Fig5Predictions(fpath, fname_start, path, ndays=74):
     cval = ax2.scatter(dfn.xx -20, dfn.yy - 20, c=dfn.votes, cmap=cmap, s=5, marker="s", vmax=1, vmin=0)
     cbar = plt.colorbar(cval, cax=ax3, orientation="horizontal")
     cbar.set_ticks([0., 0.4, 0.5, 0.6, 1.])
-    cbar.ax.set_xticklabels(["Non-Res. 100%", "60%", "50%", "60%", "Res. 100%"], fontsize=8)
+    cbar.ax.set_xticklabels(["Non-Res. 100%", "60%", "50%", "60%", "Res. 100%"], fontsize=12)
+    tl = cbar.ax.get_xticklabels()
+    tl[0].set_horizontalalignment("left")
+    tl[-1].set_horizontalalignment("right")
     cbar.set_clim(0, 1)
-    plt.tight_layout(h_pad=0.05)
+    plt.tight_layout(h_pad=0.1)
+    if save:
+        fig.savefig("VotePercent.png", bbox_inches="tight")
     plt.show()
     # --
-    fig, ax1 = plt.subplots(figsize=(4, 3.33))
+    fig, ax1 = plt.subplots(figsize=(12, 6))
     ax1.imshow(img.mean(-1), cmap="gist_gray")
     ax1.set_xticks([])
     ax1.set_yticks([])
@@ -1425,42 +1394,131 @@ def Fig5Predictions(fpath, fname_start, path, ndays=74):
     ax1.scatter(dfrw.xx - 20, dfrw.yy - 20, marker="s", color="r", s=2, label="Incorrectly Classified Residential Source")
     ax1.scatter(dfnc.xx - 20, dfnc.yy - 20, marker="s", color="c", s=2, label="Correctly Classified Non-Residential Source")
     ax1.scatter(dfnw.xx - 20, dfnw.yy - 20, marker="s", color="b", s=2, label="Incorrectly Classified Non-Residential Source")
-    lgd = ax1.legend(ncol=2, fontsize=8, loc="upper center", bbox_to_anchor=(0.5, -0.01))
+    lgd = ax1.legend(ncol=2, fontsize=12, loc="upper center", bbox_to_anchor=(0.5, -0.01))
     for ii in lgd.legendHandles:
-        ii._sizes = [6]
+        ii._sizes = [20]
+    if save:
+        fig.savefig("Predictions.png", bbox_inches="tight")
     plt.show()
 
 
-
-def Fig6Comparison(fpath):
+def Fig5VoteNights(path, fname_start, ndays=74, save=False):
     """"""
-    fstarts = np.unique([fname[:-7] for fname in os.listdir(fpath)])
+    np.random.seed(0)
+    # --
+    regex  = re.compile(fname_start + "(\d+).npy")
+    fnames = sorted(filter(regex.search, os.listdir(path)))
+    # --
+    pred, test = np.load(os.path.join(path, fnames[0]))
+    preds = pred.reshape(ndays, pred.size / ndays)
+    # --
+    labels = test.reshape(ndays, test.size / ndays)[0]
+    data = []
+    for ii in range(1, ndays + 1):
+        arr = []
+        for _ in range(100):
+            idx = np.random.choice(range(ndays), ii, False)
+            vote = (preds[idx].mean(axis=0) > 0.5).astype(int)
+            acc = accuracy_score(vote, labels)
+            arr.append(acc)
+        data.append(arr)
+    data = np.array(data)
+    # --
+    fig, ax1 = plt.subplots(figsize=(5, 3))
+    for xval, yy in enumerate(data):
+        if xval == 0:
+            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2,
+                        label="Sample Accuracy")
+        else:
+            ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2)
+    ax1.plot(np.array(range(ndays)) + 1, data.mean(axis=1), label="Mean Accuracy")
+    ax1.set_ylabel("Accuracy (%)", fontsize=12)
+    ax1.set_xlabel("N Observations in Voting", fontsize=12)
+    ax1.set_yticks([0.5, 0.6, 0.7, 0.8])
+    ax1.set_yticklabels([50, 60, 70, 80], fontsize=10)
+    ax1.set_xticklabels(np.array(range(8)) * 10, fontsize=10)
+    ax1.set_xlim(0, ndays + 1)
+    ax1.legend(prop=mpl.font_manager.FontProperties(size=12), frameon=False)
+    plt.tight_layout()
+    if save:
+        fig.savefig("VotingNights.png", bbox_inches="tight")
+    plt.show()
+
+
+def Fig6Table(fpath, tsts, ndays=74):
+    """"""
+    fstarts = np.unique([fname[:-7] for fname in os.listdir(path)])
+    fstarts = filter(lambda x: "full" not in x, fstarts)
+    fstarts = filter(lambda x: "coords" not in x, fstarts)
+    data = {}
     for fstart in sorted(fstarts):
         print(fstart)
-        # Fig2SourceAcc(fpath, fstart)
-        # Fig3SourceVote(fpath, fstart, rsplit=0.5)
-        # --
-        # regex  = re.compile(fstart + "(\d+).npy")
-        # fnames = sorted(filter(regex.search, os.listdir(path)))
-        # # --
-        # acc, res, nrs = [], [], []
-        # for fname in fnames:
-        #     pred, test = np.load(os.path.join(path, fname))
-        #     vals = zip(pred, test)
-        #     acc.append(accuracy_score(*zip(*vals)))
-        #     res.append(accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))))
-        #     nrs.append(accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))))
         # --
         regex  = re.compile(fstart + "(\d+).npy")
         fnames = sorted(filter(regex.search, os.listdir(path)))
         # --
-        acc, res, nrs = [], [], []
-        for fname in fnames:
+        src, vot, bld, b5, b10, b15 = [], [], [], [], [], []
+        for ii, fname in enumerate(fnames):
             pred, test = np.load(os.path.join(path, fname))
-            _, vacc, vnracc, vracc = votescore(pred, test, rsplit=rsplit, pp=False)
-            acc.append(vacc)
-            res.append(vracc)
-            nrs.append(vnracc)
-        print("Acc: {}".format(np.median(acc)))
-        print("Res Acc: {}".format(np.median(res)))
-        print("Non-Res Acc: {}".format(np.median(nrs)))
+            # --
+            vals = zip(pred, test)
+            acc = accuracy_score(*zip(*vals)) * 100
+            res = accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))) * 100
+            nrs = accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))) * 100
+            src.append([acc, res, nrs])
+            # --
+            vot.append(votescore(pred, test, rsplit=rsplit, pp=False)[1:])
+            # --
+            df = pd.DataFrame(np.array([pred, test, tsts[ii]]).T, columns=["pred", "labs", "idx"])
+            df["bbl"] = [lc.coords_bbls[idx] for idx in df.idx]
+            N = df.groupby("bbl").size()
+            df = df.groupby("idx").mean()
+            df["pred"] = (df.pred > 0.5).astype(float)
+            df = df.groupby("bbl").mean()
+            df["pred"] = (df.pred > 0.5).astype(float)
+            df["N"] = N / 74
+            # --
+            acc = accuracy_score(df.pred, df.labs) * 100
+            res = accuracy_score(df[df.labs == 1.].pred, df[df.labs == 1.].labs) * 100
+            nre = accuracy_score(df[df.labs == 0.].pred, df[df.labs == 0.].labs) * 100
+            bld.append([acc, res, nre])
+            # --
+            df5 = df[df.N > 4]
+            acc = accuracy_score(df5.pred, df5.labs) * 100
+            res = accuracy_score(df5[df5.labs == 1.].pred, df5[df5.labs == 1.].labs) * 100
+            nre = accuracy_score(df5[df5.labs == 0.].pred, df5[df5.labs == 0.].labs) * 100
+            b5.append([acc, res, nre])
+            # --
+            df10 = df[df.N > 9]
+            acc = accuracy_score(df10.pred, df10.labs) * 100
+            res = accuracy_score(df10[df10.labs == 1.].pred, df10[df10.labs == 1.].labs) * 100
+            nre = accuracy_score(df10[df10.labs == 0.].pred, df10[df10.labs == 0.].labs) * 100
+            b10.append([acc, res, nre])
+        # --
+        data[fstart] = {"src": np.array(src), "vot": np.array(vot),
+            "bld": np.array(bld), "b5": np.array(b5), "b10": np.array(b10)}
+    # --
+    for kk in fstarts:
+        print("{}".format(kk))
+        print("Srce -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
+            *np.median(data[kk]["src"], axis=0)))
+        print("Vote -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
+            *np.median(data[kk]["vot"], axis=0)))
+        print("Bldg -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
+            *np.median(data[kk]["bld"], axis=0)))
+        print("Bld5 -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
+            *np.median(data[kk]["b5"], axis=0)))
+        print("Bd10 -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
+            *np.median(data[kk]["b10"], axis=0)))
+
+
+def load_vals(lc, path):
+    """"""
+    trns = []
+    tsts = []
+    for ii in range(1, 101):
+        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
+            lc, crds, lcs, seed=ii)
+        trns.append(trn)
+        tsts.append(tst)
+    return [trns, tsts]
