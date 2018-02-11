@@ -254,7 +254,7 @@ def train_classifier(lc, clf, days, crds, lcs, ons, offs, seed, excl_bbl=False,
 
 def main(lc, path, outpath, pred_fname, clf, whiten=False,
     append_coords=False, iters=100, excl_bbl=False, downsampleN=False,
-    coords_only=False, clf_name=False):
+    coords_only=False, clf_fname=False):
     """"""
     # -- Load data.
     days, crds, lcs, ons, offs = load_data(lc, path)
@@ -264,7 +264,7 @@ def main(lc, path, outpath, pred_fname, clf, whiten=False,
             lc, clf, days, crds, lcs, ons, offs, ii, excl_bbl=excl_bbl,
             whiten=whiten, append_coords=append_coords, downsampleN=downsampleN,
             coords_only=coords_only)
-        if clf_name:
+        if clf_fname:
             # -- Save classifier to file.
             fpath = os.path.join(outpath, clf_fname.format(ii))
             joblib.dump(clf, fpath)
