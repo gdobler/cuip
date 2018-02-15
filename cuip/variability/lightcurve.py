@@ -8,24 +8,30 @@ import pandas as pd
 import scipy.ndimage.measurements as ndm
 
 
-def start(text):
-    """Print status of process.
+def start(text, same_line=False):
+    """Print status.
     Args:
-        text (str) - Text to print to stdout.
+        text (str) - text to print.
+        same_line (bool) - print with or without return.
     Returns:
-        time.time()
+        time.time() - time at start of process.
     """
-    print("LIGHTCURVES: {}".format(text))
+    string = "LIGHTCURVES: {}                                                  "
+    if same_line:
+        print(string.format(text), end="\r")
+    else:
+        print(string.format(text))
     sys.stdout.flush()
     return time.time()
 
 
 def finish(tstart):
-    """Prints elapsed time from start of process.
+    """Print elapsed time from start of process.
     Args:
-        tstart (time).
+        tstart - time.time()
     """
-    print("LIGHTCURVES: Complete ({:.2f}s)".format(time.time() - tstart))
+    string = "LIGHTCURVES: Complete ({:.2f}s)                                  "
+    print(string.format(time.time() - tstart))
 
 
 class LightCurves(object):
