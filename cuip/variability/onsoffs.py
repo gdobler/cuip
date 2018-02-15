@@ -1,26 +1,15 @@
 from __future__ import print_function
 
 import os
-import sys
-import time
 import numpy as np
-import matplotlib.pyplot as plt
-from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage import correlate1d
+from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage.filters import gaussian_filter as gf
+# -- CUIP imports
+from plot import plot_bigoffs
+from lightcurve import start, finish
 
 plt.style.use("ggplot")
-
-def _start(text):
-    """"""
-    print("LIGHTCURVES: {}".format(text))
-    sys.stdout.flush()
-    return time.time()
-
-
-def _finish(tstart):
-    """"""
-    print("LIGHTCURVES: Complete ({:.2f}s)".format(time.time() - tstart))
 
 
 def preprocess_lightcurves(lc, width=30):
@@ -32,13 +21,13 @@ def preprocess_lightcurves(lc, width=30):
         maks (array) - mask for preprocessed array of light curves.
     """
     # -- Print status.
-    tstart = _start("Preprocessing light curves.")
+    tstart = start("Preprocessing light curves.")
     mask = gf((lc.lcs > -9999).astype(float), (width, 0)) > 0.9999
     msk_sm = gf(mask.astype(float), (width, 0))
     lcs_sm = gf(lc.lcs * mask, (width, 0)) / (msk_sm + (msk_sm == 0))
     lcs_sm = np.ma.array(lcs_sm, mask=~mask)
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return lcs_sm
 
 
@@ -50,11 +39,11 @@ def min_max_lightcurves(lcs):
         minmax (array) - preprocessed array of light curves.
     """
     # -- Print status.
-    tstart = _start("Minmaxing light curves.")
+    tstart = start("Minmaxing light curves.")
     minmax = MinMaxScaler().fit_transform(lcs)
     minmax = np.ma.array(minmax, mask=lcs.mask)
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return(minmax)
 
 
@@ -67,7 +56,7 @@ def median_detrend(minmax, width=30):
         dtrend (array)
     """
     # -- Print status.
-    tstart = _start("Detrending light curves.")
+    tstart = start("Detrending light curves.")
     # -- Check if full dataset is masked:
     if minmax.mask.all() != True:
         # -- Calculate smoothed median.
@@ -84,18 +73,24 @@ def median_detrend(minmax, width=30):
     else:
         dtrend = minmax.T  # -- Pass masked array.
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return dtrend.T
 
 
 def high_pass_subtraction(dtrend, width=360):
-    """"""
+    """Substract high pass filter from lightcurves.
+    Args:
+        dtrend (array) - preprocessed light curves.
+        width (int) - width of high pass gaussian filter.
+    Returns:
+        lcs_diff (arr) - high pass subtracted array.
+    """
     # -- Print status.
-    tstart = _start("High pass subtraction.")
+    tstart = start("High pass subtraction.")
     lcs_hp = gf(dtrend, (0, width))
     lcs_diff = dtrend - lcs_hp
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return lcs_diff
 
 
@@ -109,13 +104,13 @@ def gaussian_differences(lcs_diff, delta=2):
         lcs_gd (array) - array of light curve gaussian differences.
     """
     # -- Print status.
-    tstart = _start("Calculating gaussian differences.")
+    tstart = start("Calculating gaussian differences.")
     lcs_gd = np.ma.zeros(lcs_diff.shape, dtype=lcs_diff.dtype)
     lcs_gd[delta // 2: -delta // 2] = lcs_diff[delta:, :] - lcs_diff[:-delta, :]
     lcs_gd.mask = np.zeros_like(lcs_diff.mask)
     lcs_gd.mask[delta // 2: -delta // 2] = (lcs_diff.mask[delta:, :] * lcs_diff.mask[:-delta, :])
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return lcs_gd
 
 
@@ -130,7 +125,7 @@ def sigma_clipping(lcs_gd, sig_clip=2, iters=10):
         sig (array) - standard deviation values.
     """
     # -- Print status.
-    tstart = _start("Sigma clipping.")
+    tstart = start("Sigma clipping.")
     tmsk = lcs_gd.mask.copy()
     for _ in range(iters):
         avg = lcs_gd.mean(0)
@@ -138,7 +133,7 @@ def sigma_clipping(lcs_gd, sig_clip=2, iters=10):
         lcs_gd.mask = np.abs(lcs_gd - avg) > sig_clip * sig
     lcs_gd.mask = tmsk
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return [avg, sig]
 
 
@@ -154,7 +149,7 @@ def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.):
         tags_offs (array) - array of potential offs.
     """
     # -- Print status.
-    tstart = _start("Tag ons and offs.")
+    tstart = start("Tag ons and offs.")
     tags_on = np.zeros(lcs_gd.shape, dtype=bool)
     tags_off = np.zeros(lcs_gd.shape, dtype=bool)
     # -- Pos values, higher than prev and next value, and are not masked.
@@ -168,7 +163,7 @@ def tag_ons_offs(lcs_gd, avg, sig, sig_peaks=10.):
                      (lcs_gd[1:-1] < lcs_gd[:-2]) & \
                      ~lcs_gd.mask[1:-1]
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return [tags_on, tags_off]
 
 
@@ -185,7 +180,7 @@ def cross_check(minmax, tags_on, tags_off, width=30, sig=2):
         good_offs (array) - array of good offs.
     """
     # -- Print status.
-    tstart = _start("Cross check ons and offs.")
+    tstart = start("Cross check ons and offs.")
     # -- Set up filters
     mean_diff = ((np.arange(2 * width) >= width) * 2 - 1) / float(width)
     mean_left = 1.0 * (np.arange(2 * width) < width) / float(width)
@@ -202,7 +197,7 @@ def cross_check(minmax, tags_on, tags_off, width=30, sig=2):
     good_ons = tags_on & good_arr
     good_offs = tags_off & good_arr
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return [good_ons, good_offs]
 
 
@@ -215,7 +210,7 @@ def find_bigoffs(minmax, good_offs):
         bigoffs (list) - timestep of bigoff for each source.
     """
     # -- Print status.
-    tstart = _start("Calculate bigoffs.")
+    tstart = start("Calculate bigoffs.")
     bigoffs = []
     # -- For each lightcurve and corresponding set of offs.
     for src, offs in zip(minmax.T, good_offs.T):
@@ -234,45 +229,8 @@ def find_bigoffs(minmax, good_offs):
                     bigoff = (ii, mm)
             bigoffs.append(bigoff[0])
     # -- Print status.
-    _finish(tstart)
+    finish(tstart)
     return bigoffs
-
-
-def plot_bigoffs(minmax, bigoffs, show=True, fname="./pdf/night_{}.png"):
-    """Plot bigoffs."""
-    # -- Print status.
-    tstart = _start("Plotting bigoffs.")
-    # -- Argsort by bigoff time, to sort plot.
-    idx = np.array(bigoffs).argsort()
-    # -- Create plot.
-    fig, ax = plt.subplots(figsize=(12, 6))
-    # -- Imshow sorted by bigoffs.
-    ax.imshow(minmax.T[idx], aspect="auto")
-    # -- Scatter bigofff times.
-    ax.scatter(np.array(bigoffs)[idx], range(len(bigoffs)), s=3, label="BigOff")
-    # -- Formatting.
-    ax.set_ylim(0, minmax.T.shape[0])
-    ax.set_xlim(0, minmax.T.shape[1])
-    ax.set_xticks(np.array(range(8)) * 360)
-    ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"])
-    ax.set_xlabel("Time")
-    ax.set_ylabel("Light Sources")
-    ax.set_title("Light Sources w Big Offs ({})" \
-        .format(lc.night.date()))
-    ax.legend()
-    ax.grid(False)
-    ax.xaxis.grid(True, color="w", alpha=0.2)
-    plt.tight_layout()
-    # -- Show or save.
-    if show:
-        plt.show(block=True)
-    else:
-        if not os.path.exists("./pdf/"):
-            os.mkdir("./pdf")
-        plt.savefig(fname.format(lc.night.date()))
-        plt.close("all")
-    # -- Print status.
-    _finish(tstart)
 
 
 def main(lc):
@@ -326,8 +284,7 @@ class CLI(object):
         """Write ons/offs/bigoffs to file for all nights."""
         # -- Define output path.
         outpath = os.path.join(OUTP, "onsoffs")
-        print("LIGHTCURVES: Files to be written to {}".format(outpath))
-        sys.stdout.flush()
+        _ = start("Files to be written to {}".format(outpath))
         # -- Empty list to save bigoff dfs.
         bigoffs_df = []
         # -- Loop over each unique day in lc.meta.index.
