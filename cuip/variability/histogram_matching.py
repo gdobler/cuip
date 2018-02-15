@@ -1,13 +1,11 @@
 from __future__ import print_function
 
+import os
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.misc import imread
-try:
-    from skimage.data import chelsea, coffee
-except:
-    print("skimage not installed. Will not be able to run demo.")
+from skimage.data import chelsea, coffee
 # -- CUIP imports
 from plot import plot_match
 
