@@ -155,10 +155,15 @@ def votescore(preds, tst_labs, ndays=74, rsplit=0.5, pp=True):
 
 
 def downsample(arr, size):
-    """"""
-    # --
+    """Downsample the provided arr by N timesteps as defined by size.
+    Args:
+        arr (arr) - 2D numpy array to douwnsample.
+        size (int) - downsample by N timesteps.
+    Returns:
+        tmp (arr) - downsampled arr.
+    """
     tstart = start("Downsampling data.")
-    # --
+    # -- Get len of array.
     arr_len = arr.shape[1]
     # -- Define the padding size required.
     pad   = int(np.ceil(arr.shape[1] / float(size)) * size - arr.shape[1])
