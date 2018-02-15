@@ -20,7 +20,6 @@ def channel_cdf(channel):
     cdf = np.cumsum(np.histogram(channel.flatten(), 256, [0, 255])[0])
     # -- Normalize.
     cdf = cdf.astype(float) / cdf.max()
-
     return cdf
 
 
@@ -34,7 +33,6 @@ def channel_vals(img_cdf, ref_cdf):
     """
     # -- Map img values to ref.
     vals = [list(ref_cdf >= img_cdf[ii]).index(True) for ii in range(len(img_cdf))]
-
     return np.array(vals).astype(float)
 
 
@@ -51,7 +49,6 @@ def channel_match(channel, vals):
     # -- Map all values in channel to matched values.
     for ii in range(256):
         match[channel == ii] = vals[ii]
-
     return match
 
 
@@ -63,7 +60,6 @@ def rgb_cdfs(img):
         cdfs (array).
     """
     cdfs = [channel_cdf(rgb_select(img, ii)) for ii in range(3)]
-
     return cdfs
 
 
@@ -83,7 +79,6 @@ def rgb_select(img, ii):
         chan = img[:, ii]
     else:
         raise ValueError("Invalid image input.")
-
     return chan
 
 
@@ -102,7 +97,6 @@ def rgb_match(img, img_cdfs, ref_cdfs):
     vals = [channel_vals(ii, rr) for ii, rr in zip(img_cdfs, ref_cdfs)]
     # -- Map image values.
     match = [channel_match(rgb_select(img, ii), vals[ii]) for ii in range(3)]
-
     return np.moveaxis(match, 0, -1)
 
 
@@ -149,14 +143,15 @@ def demo(img=coffee(), ref=chelsea(), figsize=(6, 6)):
     plot_match(img, ref, match, figsize=figsize)
 
 
-def match_lightcurves(lc):
+def match_lightcurves(lc, outdir):
     """Perform histogram matching for all lightcurve files.
     Args:
         lc (obj) - LightCurve object.
+        outdir (str) - directory to save outputs.
     """
     # -- Get lightcurve paths.
-    fnames = sorted(os.listdir(lc.path_light))
-    fpaths = [os.path.join(lc.path_light, fname) for fname in fnames]
+    fnames = sorted(os.listdir(lc.path_lig))
+    fpaths = [os.path.join(lc.path_lig, fname) for fname in fnames]
     # -- Load reference image and calculate cdfs.
     ref = np.load(fpaths[-1])
     ref = np.ma.array(ref, mask=ref == -9999).astype(int)
@@ -165,9 +160,8 @@ def match_lightcurves(lc):
     for ii, fpath in enumerate(fpaths):
         # -- In and out names.
         bname = os.path.basename(fpath)
-        hpath = os.path.join(lc.path_outpu, "histogram_matching")
         # -- If output does not alread exist.
-        if not bname in os.listdir(hpath):
+        if not bname in os.listdir(outdir):
             # -- Print status.
             print("LIGHTCURVES: Histogram matching {}                        " \
                 .format(bname))
@@ -184,9 +178,9 @@ def match_lightcurves(lc):
                 sys.stdout.flush()
                 match_lightc.append(rgb_match(src, rgb_cdfs(src), ref_cdfs))
             # -- Save new ligthcurve array.
-            np.save(os.path.join(hpath, bname), np.array(match_lightc))
+            np.save(os.path.join(outdir, bname), np.array(match_lightc))
 
 
 if __name__ == "__main__":
     demo()
-    match_lightcurves(lc)
+    match_lightcurves(lc, os.path.join(lc.path_out, "histogram_matching"))
