@@ -256,16 +256,16 @@ class CLI(object):
         resp = raw_input(text)
         # -- Run plotting for current night if chosen.
         if int(resp) == 0:
-            self.one_off()
+            self.one_off(lc)
         # -- Write ons/offs to file for all nights if chosen.
         elif int(resp) == 1:
-            self.write_files()
+            self.write_files(lc)
         else: # -- Else alert user of invalid entry, and recurse.
             print("LIGHTCURVES: '{}' is an invalid entry.".format(resp))
             CLI()
 
 
-    def one_off(self):
+    def one_off(self, lc):
         """Calculate values for night current loaded in lc."""
         dtrend, lcs_diff, lcs_gd, good_ons, good_offs, bigoffs = main(lc)
         plot_bigoffs(dtrend, bigoffs)
@@ -273,10 +273,10 @@ class CLI(object):
         plot_bigoffs(lcs_gd, bigoffs)
 
 
-    def write_files(self):
+    def write_files(self, lc):
         """Write ons/offs/bigoffs to file for all nights."""
         # -- Define output path.
-        outpath = os.path.join(OUTP, "onsoffs")
+        outpath = lc.path_out
         _ = start("Files to be written to {}".format(outpath))
         # -- Empty list to save bigoff dfs.
         bigoffs_df = []
