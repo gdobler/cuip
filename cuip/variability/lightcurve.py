@@ -29,8 +29,7 @@ def finish(tstart):
 
 
 class LightCurves(object):
-    def __init__(self, path_lig, path_var, path_reg, path_sup, path_out,
-        load_all=True):
+    def __init__(self, path_lig, path_var, path_reg, path_sup, path_out):
         """Container for luminosity timeseries.
         Args:
             path_lig (str) - path to light curve directory.
@@ -38,7 +37,6 @@ class LightCurves(object):
             path_reg (str) - path to registration directory.
             path_sup (str) - path to supplementary directory.
             path_out (str) - path to output directory.
-            load_all (bool, default=True) - load ons/offs and bigoffs.
         """
         # -- Data paths.
         self.path_lig = path_lig
