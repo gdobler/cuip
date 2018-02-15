@@ -9,8 +9,6 @@ from scipy.ndimage.filters import gaussian_filter as gf
 from plot import plot_bigoffs
 from lightcurve import start, finish
 
-plt.style.use("ggplot")
-
 
 def preprocess_lightcurves(lc, width=30):
     """Gaussian filter (sigma=30) each lightcurve in a given night.
