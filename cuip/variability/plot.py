@@ -1522,3 +1522,31 @@ def load_vals(lc, path):
         trns.append(trn)
         tsts.append(tst)
     return [trns, tsts]
+
+
+def all_feature_imporances(path, save=False):
+    """"""
+    # --
+    fnames = filter(lambda x: x.endswith(".pkl"), os.listdir(path))
+    fimp = []
+    for fname in fnames:
+        clf = joblib.load(os.path.join(path, fname))
+        fimp.append(clf.feature_importances_)
+    fimp = np.vstack(fimp)
+    # --
+    fig, ax = plt.subplots(figsize=(6, 3))
+    for ii in fimp:
+        ax.scatter(range(len(ii)), ii, s=1, c="k", alpha=0.2)
+    ax.scatter(range(len(ii)), ii, s=1, c="k", alpha=0.2, label="Sample Feature Importance")
+    ax.plot(fimp.mean(0), label="Mean Feature Importance")
+    ax.set_ylim(fimp.min(), fimp.max())
+    ax.set_xlim(0, len(fimp[0]))
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"], fontsize=8)
+    ax.set_yticks([])
+    ax.set_xlabel("Time", fontsize=10)
+    ax.set_ylabel("Relative Feature Importance", fontsize=10)
+    ax.legend()
+    if save:
+        fig.savefig("FeatureImportances.png", bbox_inches="tight")
+    plt.show()
