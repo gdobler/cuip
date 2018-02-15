@@ -1550,3 +1550,40 @@ def all_feature_imporances(path, save=False):
     if save:
         fig.savefig("FeatureImportances.png", bbox_inches="tight")
     plt.show()
+
+
+def plot_bigoffs(minmax, bigoffs, show=True, fname="./pdf/night_{}.png"):
+    """Plot bigoffs."""
+    # -- Print status.
+    tstart = _start("Plotting bigoffs.")
+    # -- Argsort by bigoff time, to sort plot.
+    idx = np.array(bigoffs).argsort()
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(12, 6))
+    # -- Imshow sorted by bigoffs.
+    ax.imshow(minmax.T[idx], aspect="auto")
+    # -- Scatter bigofff times.
+    ax.scatter(np.array(bigoffs)[idx], range(len(bigoffs)), s=3, label="BigOff")
+    # -- Formatting.
+    ax.set_ylim(0, minmax.T.shape[0])
+    ax.set_xlim(0, minmax.T.shape[1])
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"])
+    ax.set_xlabel("Time")
+    ax.set_ylabel("Light Sources")
+    ax.set_title("Light Sources w Big Offs ({})" \
+        .format(lc.night.date()))
+    ax.legend()
+    ax.grid(False)
+    ax.xaxis.grid(True, color="w", alpha=0.2)
+    plt.tight_layout()
+    # -- Show or save.
+    if show:
+        plt.show(block=True)
+    else:
+        if not os.path.exists("./pdf/"):
+            os.mkdir("./pdf")
+        plt.savefig(fname.format(lc.night.date()))
+        plt.close("all")
+    # -- Print status.
+    _finish(tstart)
