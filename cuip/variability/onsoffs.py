@@ -246,28 +246,23 @@ def main(lc):
 
 
 class CLI(object):
-    def __init__(self):
+    def __init__(self, lc):
         """"""
-        try: # -- Check if light curve object exists (named)
-            lc
-        except: # -- Raise error if not.
-            raise NameError("LIGHTCURVES: lc (obj) is not defined.")
-        else: # -- Run CLI if it exists.
-            # -- Get user input.
-            text = ("LIGHTCURVES: Select from options below:\n" +
-                    "    [0] Show plot for current night.\n" +
-                    "    [1] Write ons/offs to file for all nights. \n"
-                    "Selection: ")
-            resp = raw_input(text)
-            # -- Run plotting for current night if chosen.
-            if int(resp) == 0:
-                self.one_off()
-            # -- Write ons/offs to file for all nights if chosen.
-            elif int(resp) == 1:
-                self.write_files()
-            else: # -- Else alert user of invalid entry, and recurse.
-                print("LIGHTCURVES: '{}' is an invalid entry.".format(resp))
-                CLI()
+        # -- Get user input.
+        text = ("LIGHTCURVES: Select from options below:\n" +
+                "    [0] Show plot for current night.\n" +
+                "    [1] Write ons/offs to file for all nights. \n"
+                "Selection: ")
+        resp = raw_input(text)
+        # -- Run plotting for current night if chosen.
+        if int(resp) == 0:
+            self.one_off()
+        # -- Write ons/offs to file for all nights if chosen.
+        elif int(resp) == 1:
+            self.write_files()
+        else: # -- Else alert user of invalid entry, and recurse.
+            print("LIGHTCURVES: '{}' is an invalid entry.".format(resp))
+            CLI()
 
 
     def one_off(self):
@@ -305,4 +300,4 @@ class CLI(object):
 
 
 if __name__ == "__main__":
-    CLI()
+    CLI(lc)
