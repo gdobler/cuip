@@ -1554,7 +1554,7 @@ def all_feature_imporances(path, save=False):
     plt.show()
 
 
-def plot_bigoffs(minmax, bigoffs, show=True, fname="./pdf/night_{}.png"):
+def plot_bigoffs(lc, minmax, bigoffs, show=True, fname="./pdf/night_{}.png"):
     """Plot bigoffs."""
     # -- Print status.
     tstart = start("Plotting bigoffs.")
