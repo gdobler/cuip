@@ -18,6 +18,8 @@ from scipy.stats.stats import linregress
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage.filters import gaussian_filter as gf
+# -- CUIP Imports
+from lightcurve import start, finish
 
 plt.style.use("ggplot")
 
