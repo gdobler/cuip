@@ -1,44 +1,15 @@
 from __future__ import print_function
 
 import os
-import sys
-import time
 import numpy as np
 import pandas as pd
 import multiprocessing
-import matplotlib.pyplot as plt
 from collections import Counter
 from sklearn.externals import joblib
-from sklearn.metrics import confusion_matrix, accuracy_score
 from sklearn.ensemble import RandomForestClassifier
-
-plt.style.use("ggplot")
-
-
-def _start(text, same_line=False):
-    """Print status.
-    Args:
-        text (str) - text to print.
-        same_line (bool) - print with or without return.
-    Returns:
-        time.time() - time at start of process.
-    """
-    string = "LIGHTCURVES: {}                                                  "
-    if same_line:
-        print(string.format(text), end="\r")
-    else:
-        print(string.format(text))
-    sys.stdout.flush()
-    return time.time()
-
-
-def _finish(tstart):
-    """Print elapsed time from start of process.
-    Args:
-        tstart - time.time()
-    """
-    string = "LIGHTCURVES: Complete ({:.2f}s)                                  "
-    print(string.format(time.time() - tstart))
+from sklearn.metrics import confusion_matrix, accuracy_score
+# -- CUIP imports
+from lightcurve import start, finish
 
 
 def load_data(lc, path, arr_len=2692):
@@ -54,7 +25,7 @@ def load_data(lc, path, arr_len=2692):
         offs (array) - Stacked array of offs.
     """
     # -- Print status.
-    tstart = _start("Loading data from {}.".format(path))
+    tstart = start("Loading data from {}.".format(path))
     # -- Collect detrended file names
     fnames = filter(lambda x: x.startswith("detrended_"), os.listdir(path))
     # -- For each file in fnames load the corresponding files.
@@ -62,7 +33,7 @@ def load_data(lc, path, arr_len=2692):
     ll   = len(fnames)
     for ii, fname in enumerate(sorted(fnames)):
         # -- Print loading status.
-        _ = _start("Loading {} ({}/{})".format(fname, ii + 1, ll), True)
+        _ = start("Loading {} ({}/{})".format(fname, ii + 1, ll), True)
         # -- Load detrended lightcurve file.
         lcs = np.load(os.path.join(path, fname))
         # -- Check if the lightcurves are complete and load data.
@@ -79,7 +50,7 @@ def load_data(lc, path, arr_len=2692):
     offs = np.hstack(data[:, 3]).T
     crds = np.array(lc.coords.keys() * len(data[:, 0]))
     # -- Print status & return data.
-    _finish(tstart)
+    finish(tstart)
     return [data[:, 0], crds, lcs, ons, offs]
 
 
@@ -97,7 +68,7 @@ def bbl_split(lc, crds, data, train_size=0.7, seed=1, excl_bbl=False):
         (list)
     """
     # -- Print status.
-    tstart = _start("Splitting data by bbls")
+    tstart = start("Splitting data by bbls")
     # -- Set random seed.
     np.random.seed(seed)
     # -- Only use coords with corresponding class.
@@ -110,7 +81,7 @@ def bbl_split(lc, crds, data, train_size=0.7, seed=1, excl_bbl=False):
     np.random.shuffle(bblN)
     # -- Remove bbl from sample if excl_bbl provided and in list of bbls.
     if np.isin(excl_bbl, bblN[:, 0]).sum() > 0:
-        _ = _start("Excluding sources from BBL: {}".format(excl_bbl))
+        _ = start("Excluding sources from BBL: {}".format(excl_bbl))
         bblN = bblN[~np.isin(bblN[:, 0], excl_bbl)]
     # -- Find index to split bbls
     splt = np.argmax(1. * np.cumsum(bblN[:, 1]) / sum(bblN[:, 1]) > train_size)
@@ -129,14 +100,14 @@ def bbl_split(lc, crds, data, train_size=0.7, seed=1, excl_bbl=False):
     trn_labs = labels[np.isin(crdC, trn)]
     tst_labs = labels[np.isin(crdC, tst)]
     # -- Print status.
-    _finish(tstart)
-    _ = _start("Train N: {}, Test N: {}".format(trn_labs.size, tst_labs.size))
-    _ = _start("Training -- Res: {}, Non-Res: {}, Sum: {}".format(
+    finish(tstart)
+    _ = start("Train N: {}, Test N: {}".format(trn_labs.size, tst_labs.size))
+    _ = start("Training -- Res: {}, Non-Res: {}, Sum: {}".format(
         sum(trn_labs == 1) / 74, sum(trn_labs != 1) / 74, trn_labs.size / 74))
-    _ = _start("Testing -- Res: {}, Non-Res: {}, Sum: {}".format(
+    _ = start("Testing -- Res: {}, Non-Res: {}, Sum: {}".format(
         sum(tst_labs == 1) / 74, sum(tst_labs != 1) / 74, tst_labs.size / 74))
     actual_split = 1. * trn_labs.size / (trn_labs.size + tst_labs.size)
-    _ = _start("Actual Split: {:.2f}".format(actual_split))
+    _ = start("Actual Split: {:.2f}".format(actual_split))
     return [trn_coords, trn_data, trn_labs, tst_coords, tst_data, tst_labs]
 
 
@@ -159,8 +130,8 @@ def score(preds, tst_labs, split=False, pp=True):
     if type(split) != bool: # -- If a split value is supplied, add to existing text.
         txt = "Split: {:.2f} ".format(split) + txt
     if pp == True:   # -- If chosen, print confusion matrix.
-        _ = _start("Confusion matrix: {}".format([list(cf[0]), list(cf[1])]))
-        _ = _start(txt)
+        _ = start("Confusion matrix: {}".format([list(cf[0]), list(cf[1])]))
+        _ = start(txt)
     return [cf, acc, r_acc, nr_acc]
 
 
@@ -186,7 +157,7 @@ def votescore(preds, tst_labs, ndays=74, rsplit=0.5, pp=True):
 def downsample(arr, size):
     """"""
     # --
-    tstart = _start("Downsampling data.")
+    tstart = start("Downsampling data.")
     # --
     arr_len = arr.shape[1]
     # -- Define the padding size required.
@@ -195,7 +166,7 @@ def downsample(arr, size):
     tmp = np.append(arr, np.zeros((arr.shape[0], pad)) * np.NaN, axis=1)
     tmp = np.nanmean(tmp.reshape(-1, size), axis=1).reshape(-1, arr_len / size + 1)
     # --
-    _finish(tstart)
+    finish(tstart)
     return tmp
 
 
@@ -245,9 +216,9 @@ def train_classifier(lc, clf, days, crds, lcs, ons, offs, seed, excl_bbl=False,
     # if gsearch_params:
     #     clf = GridSearchCV(clf, gsearch_params)
     # -- Fit classifier.
-    tstart = _start("Training RF (seed: {})".format(seed))
+    tstart = start("Training RF (seed: {})".format(seed))
     clf.fit(trn_data, trn_labs)
-    _finish(tstart)
+    finish(tstart)
     # --
     return [trn_data, trn_labs, tst_data, tst_labs, clf]
 
@@ -281,10 +252,6 @@ def main_main(lc, path, outpath):
     # -- Max depth = 3.
     clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=3,
         class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
-    # # -- Coords only.
-    # main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
-    #     "rf_coords_only_mdepth3_{:03d}.npy", clf, append_coords=True,
-    #     coords_only=True)
     # -- Only lcs.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
          "rf_lcs_only_mdepth3_{:03d}.npy", clf, whiten=True)
@@ -294,16 +261,9 @@ def main_main(lc, path, outpath):
     # -- Only lcs, 10min downsample.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
         "rf_lcs_only_mdepth3__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
-    # -- lcs with coords.
-    main(lc, os.path.join(lc.path_out, "onsoffs"),  outpath,
-        "rf_full_mdepth3_{:03d}.npy", clf, whiten=True, append_coords=True)
     # -- Max depth = 6.
     clf = RandomForestClassifier(n_estimators=1000, random_state=0, max_depth=6,
         class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
-    # -- Coords only.
-    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
-        "rf_coords_only_mdepth6_{:03d}.npy", clf, append_coords=True,
-        coords_only=True)
     # -- Only lcs.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
         "rf_lcs_only_mdepth6_{:03d}.npy", clf, whiten=True)
@@ -313,16 +273,9 @@ def main_main(lc, path, outpath):
     # -- Only lcs, 10min downsample.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
          "rf_lcs_only_mdepth6__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
-    # -- Lcs with coords.
-    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
-         "rf_full_mdepth6_{:03d}.npy", clf, whiten=True, append_coords=True)
     # -- No max depth.
     clf = RandomForestClassifier(n_estimators=1000, random_state=0,
         class_weight="balanced", n_jobs=multiprocessing.cpu_count() - 2)
-    # -- Coords only.
-    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
-         "rf_coords_only_mdepthinf_{:03d}.npy", clf, append_coords=True,
-         coords_only=True)
     # -- Only lcs.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
          "rf_lcs_only_mdepthinf_{:03d}.npy", clf, whiten=True)
@@ -332,9 +285,6 @@ def main_main(lc, path, outpath):
     # -- Only lcs, 10min downsample.
     main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
          "rf_lcs_only_mdepthinf__ds60_{:03d}.npy", clf, whiten=True, downsampleN=60)
-    # -- Lcs with coords.
-    main(lc, os.path.join(lc.path_out, "onsoffs"), outpath,
-         "rf_full_mdepthinf_{:03d}.npy", clf, whiten=True, append_coords=True)
 
 
 def main_excl_bbls(lc, path, greaterN=1, popN=10, iters=1):
