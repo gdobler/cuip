@@ -235,6 +235,19 @@ class LightCurves(object):
         finish(tstart)
 
 
+    def load_bigoffs(self, fpath):
+        """Load bigoffs from pkl.
+        Args:
+            fpath (str) - path to bigoffs.pkl.
+        """
+        # -- Print status.
+        tstart = start("Loading bigoffs.pkl: {}".format(fpath))
+        # -- Load data.
+        self.bigoffs = pd.read_pickle(fpath).set_index("index")
+        # -- Print status.
+        finish(tstart)
+
+
 if __name__ == "__main__":
     # -- Load environmental variables.
     LIGH = os.environ["LIGHTCURVES"]
