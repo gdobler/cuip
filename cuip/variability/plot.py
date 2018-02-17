@@ -19,6 +19,7 @@ from scipy.stats.stats import linregress
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage.filters import gaussian_filter as gf
+from mpl_toolkits.axes_grid1 import make_axes_locatable
 # -- CUIP Imports
 from lightcurve import start, finish
 
@@ -39,6 +40,54 @@ def read_img(fpath):
     if fpath.endswith(".png"):
         img = imageio.imread(fpath)
     return img
+
+
+def adjust_img(lc, img_path):
+    """Load img and adjust (roll horizontally and vertically).
+    Args:
+        lc (obj) - LightCurve object.
+        img_path (str) - path to example image.
+    Returns:
+        img (np) - 2d-array of adjusted image.
+    """
+    # -- Find drow and dcol for the example image.
+    spath = img_path.split("/")
+    yyyy, mm, dd = int(spath[5]), int(spath[6]), int(spath[7])
+    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd - 1)]["fname"]
+    reg = pd.read_csv(os.path.join(lc.path_reg, "register_{}.csv".format(fnum)))
+    img_reg = reg[reg.fname.str[:-4] == os.path.basename(img_path)[:-4]]
+    drow = img_reg.drow.values.round().astype(int)[0]
+    dcol = img_reg.dcol.values.round().astype(int)[0]
+    # -- Print status.
+    _ = start("drow {}".format(drow))
+    _ = start("dcol {}".format(dcol))
+    # -- Roll image.
+    img = np.roll(read_img(img_path)[20:-20, 20:-20], (drow, dcol), (0, 1))
+    return img
+
+
+def bbl_income(lc):
+    """"""
+    # -- Load income data.
+    fpath = os.path.join(lc.path_sup, "ACS", "ACS_15_5YR_B19013", "ACS_15_5YR_B19013_with_ann.csv")
+    income = pd.read_csv(fpath, header=1).iloc[:, 2:4]
+    income.columns = ["Geography", "Median_HH_Income"]
+    # -- Pull block group and census tract.
+    income["BG"] = income.Geography.apply(lambda x: x.split(", ")[0].strip("Block Group "))
+    income["CT"] = income.Geography.apply(lambda x: x.split(", ")[1].strip("Census Tract "))
+    income.Median_HH_Income.replace("-", 0, inplace=True)
+    income.Median_HH_Income.replace("250,000+", 250000, inplace=True)
+    income.Median_HH_Income = income.Median_HH_Income.astype(float)
+    income.BG = income.BG.astype(int)
+    income.CT = income.CT.astype(float)
+    # -- Load PLUTO data.
+    fpath = os.path.join(lc.path_sup, "pluto", "MN.csv")
+    pluto = pd.read_csv(fpath, usecols=["Block", "CT2010", "CB2010", "BBL"])
+    pluto.BBL = pluto.BBL.astype(int)
+    pluto.CB2010 = pluto.CB2010.astype(str)
+    pluto["BG"] = pluto.CB2010.str[0].replace("n", np.nan).astype(float)
+    df = pluto.merge(income, left_on=["BG", "CT2010"], right_on=["BG", "CT"], how="left")
+    return df
 
 
 def plot_bigoffs(lc, lcs, bigoffs, show=True, fname="./pdf/night_{}.png"):
@@ -82,8 +131,6 @@ def plot_bigoffs(lc, lcs, bigoffs, show=True, fname="./pdf/night_{}.png"):
             os.mkdir("./pdf")
         plt.savefig(fname.format(lc.night.date()))
         plt.close("all")
-    # -- Print status.
-    finish(tstart)
 
 
 def plot_lightcurve_line(lc, idx):
@@ -118,8 +165,6 @@ def plot_lightcurve_line(lc, idx):
     plt.legend(handles=[ii[0] for ii in [li, off, on, big] if len(ii) > 0])
     plt.tight_layout()
     plt.show(block=True)
-    # -- Print status.
-    finish(tstart)
 
 
 def plot_winter_summer_bigoffs_boxplot(lc):
@@ -150,8 +195,6 @@ def plot_winter_summer_bigoffs_boxplot(lc):
     ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 30)])
     plt.tight_layout()
     plt.show(block=True)
-    # -- Print status.
-    finish(tstart)
 
 
 def plot_winter_summer_bigoffs_histrogram(lc, dist_name="burr"):
@@ -220,185 +263,284 @@ def plot_winter_summer_bigoffs_histrogram(lc, dist_name="burr"):
         ["Mean", "Median", "Fitted {} Dist.".format(dist_name.title())])
     plt.tight_layout()
     plt.show(block=True)
+
+
+def plot_source_locations(lc, idx, impath=os.eniron["EXIMG"], circles=True,
+    windows=True):
+    """Plot source locations and appertures on an example image.
+    Args:
+        lc (obj) - LightCurves object.
+        idx (list) - list of source indexes.
+        impath (str) - path to image.
+        circles (bool) - plot circles to highlight plotted windows?
+        windows (bool) - plot appertures?
+    """
     # -- Print status.
-    finish(tstart)
-
-
-def plot_coords_by_idx(lc, coords):
-    """"""
-    yy, xx = zip(*[lc.coords[nn] for nn in coords if nn in lc.coords.keys()])
-    img = adjust_img(lc, os.environ["EXIMG"])
+    tstart = start("Plotting {} source(s) on example image.".format(len(idx)))
+    # -- Pull coordinates for sources.
+    yy, xx = zip(*[lc.coords[nn] for nn in idx if nn in lc.coords.keys()])
+    # -- Load adjusted image.
+    img = adjust_img(lc, impath)
+    win = np.ma.array(lc.matrix_labels, mask=~np.isin(lc.matrix_labels, idx))
+    # -- Create plot.
     fig, ax = plt.subplots(figsize=(12, 6))
     ax.imshow(img)
-    ax.imshow(np.ma.array(lc.matrix_labels, mask=~np.isin(lc.matrix_labels, coords)))
-    ax.scatter(xx, yy, facecolors="none", edgecolors="r", linewidth=2)
+    if windows:
+        ax.imshow(win[20:, 20:])
+    if circles:
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, facecolors="none",
+                   edgecolors="#E69F00", linewidth=2)
+    # -- Format plot.
+    ax.set_xlim(0, img.shape[1])
     ax.set_xticks([])
     ax.set_yticks([])
-    plt.show()
-
-
-def plot_appertures(lc):
-    """Plot residential/commercial split of appertures and overlay apperture
-    centers.
-    Args:
-        lc (obj) - LightCurve object.
-    """
-
-    yy, xx = zip(*map(lambda x: lc.coords[x], lc.coords.keys()))
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    ax.imshow(lc.matrix_labels)
-    ax.imshow(lc.matrix_labels[:1020], cmap="terrain")
-    ax.scatter(xx, yy, c="r", s=2, marker="x")
-
-    ax.set_title("Residential/Commercial Split of Appertures (with Centers)")
-    ax.set_ylim(0, lc.matrix_labels.shape[0])
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid("off")
-
-    plt.gca().invert_yaxis()
     plt.tight_layout()
     plt.show(block=True)
 
 
-def plot_imshow_lightc(lc, show=True):
-    """Plot the LightCurves.
+def plot_bbls(lc, alpha=1, scatter=False, background=False,
+    impath=os.environ["EXIMG"], cmap="viridis"):
+    """Plot bbls with option to show background image.
     Args:
         lc (obj) - LightCurve object.
+        alpha (float) - alpha for plotting bbls.
+        scatter (bool) - plot sources?
+        background (bool) - plot example image as background?
+        impath (str) - path to example image.
+        cmap (str) - matplotlib colormap to use.
     """
-
-    fig, ax = plt.subplots(figsize=(8, 8))
-    ax.imshow(lc.src_lightc, cmap="gist_gray")
-    ax.set_ylim(0, lc.src_lightc.shape[0])
-    ax.set_title("Lightcurve for {} \nNull Sources: {}, Null %: {:.2f}" \
-        .format(lc.night, len(lc.null_sources), lc.null_percent * 100))
-    ax.set_xlabel("Sources")
-    ax.set_ylabel("Timestep")
-    ax.grid("off")
-    plt.tight_layout()
-    if show:
-        plt.show(block=True)
-    else:
-        plt.savefig("./pdf/lightc_{}.png".format(lc.night))
-
-
-def adjust_img(lc, img_path):
-    """Load img and adjust (roll horizontally and vertically).
-    Args:
-        lc (obj) - LightCurve object.
-        img_path (str) - path to example image.
-    Returns:
-        img (np) - 2d-array of adjusted image.
-    """
-    # -- Find drow and dcol for the example image.
-    spath = img_path.split("/")
-    yyyy, mm, dd = int(spath[5]), int(spath[6]), int(spath[7])
-    fnum = lc.meta.loc[pd.datetime(yyyy, mm, dd - 1)]["fname"]
-    reg = pd.read_csv(os.path.join(lc.path_reg, "register_{}.csv".format(fnum)))
-    img_reg = reg[reg.fname.str[:-4] == os.path.basename(img_path)[:-4]]
-    drow = img_reg.drow.values.round().astype(int)[0]
-    dcol = img_reg.dcol.values.round().astype(int)[0]
-    print("LIGHTCURVES: drow {}                                              " \
-        .format(drow))
-    print("LIGHTCURVES: dcol {}                                              " \
-        .format(dcol))
-
-    img = np.roll(read_img(img_path)[20:-20, 20:-20], (drow, dcol), (0, 1))
-
-    return img
-
-
-def plot_bbls(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
-    """Plot bbls, example img, and sources.
-    Args:
-        lc (obj) - LightCurve object.
-        img_path (str) - path to example image.
-    """
-
-    # -- Get paths.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-
+    # -- Print status.
+    tstart = start("Plotting bbls.")
     # -- Load bbls, and replace 0s.
-    bbls = np.load(bbl_path)
-    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
+    bbls = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean.npy"))
+    bbls = np.ma.array(bbls, mask=bbls == 0)
     # -- Convert coords from dict to x and y lists.
-    xx, yy = zip(*lc.coords.values())
-
-    fig, ax = plt.subplots(figsize=(12, 4))
-    if bg_img:
-        # -- Plot image, rolling by drow and dcol.
-        # -- Load image without buffer.
-        img = adjust_img(lc, img_path)
-        ax.imshow(img)
-    ax.imshow(bbls, alpha=0.3, vmax=1013890001, cmap="flag_r")
-    # -- Scatter light source coordinates taking buffer into consideration.
-    uniq = np.unique(lc.coords_bbls.values())
-    cmap = dict(zip(uniq, range(len(uniq))))
-    colors = [cmap[key] for key in lc.coords_bbls.values()]
-    ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", c=colors, s=3,
-        cmap="flag_r")
+    yy, xx = zip(*lc.coords.values())
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if background:
+        ax.imshow(adjust_img(lc, impath))
+    ax.imshow(bbls, alpha=alpha, cmap=cmap, vmax=1013380040)
+    if scatter:
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3, cmap=cmap)
+    # -- Plot formatting.
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
+    ax.set_facecolor("w")
+    plt.tight_layout()
     plt.show(block=True)
 
 
-def plot_bldgclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
-    """Plot PLTUO BldgClass.
+def plot_bldgclass(lc, alpha=1, scatter=False, background=False,
+    impath=os.environ["EXIMG"], cmap="viridis"):
+    """Plot PLTUO BldgClass with option to show background image.
     Args:
         lc (obj) - LightCurve object.
+        alpha (float) - alpha for plotting bbls.
+        scatter (bool) - plot sources?
+        background (bool) - plot example image as background?
+        impath (str) - path to example image.
+        cmap (str) - matplotlib colormap to use.
     """
-
-    # -- Load bbls, and replace 0s.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-    bbls = np.load(bbl_path)
-    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
-
-    # -- Map bbls to bldgclass number.
-    bldgclass = np.array([lc.dd_bbl_n.get(bbl, -1) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-
-    bldgclass = bldgclass.astype(float)
-    bldgclass[bldgclass == -1] = np.nan
-
-    # -- Plot img.
+    # -- Print status.
+    tstart = start("Plotting PLUTO BldgClss (est. time 2 minutes).")
+    # -- Load bbls and mask 0s.
+    bbls = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean.npy"))
+    bbls = np.ma.array(bbls, mask=bbls == 0)
+    # -- Convert coords from dict to x and y lists.
+    yy, xx = zip(*lc.coords.values())
+    # -- Map bbl to building class.
+    clss = sorted(np.unique(lc.dd_bbl_bldgclss.values()))
+    bldgclss = [lc.dd_bbl_bldgclss.get(ii, np.nan) for ii in bbls.data.ravel()]
+    bldgclss = [clss.index(ii) if ii in clss else np.nan for ii in bldgclss]
+    bldgclss = np.array(bldgclss).reshape(*bbls.shape)
+    vals = [val for val in np.unique(bldgclss) if not np.isnan(val)]
+    # -- Create plot.
     fig, ax = plt.subplots(figsize=(16, 8))
-    if bg_img:
-        img = adjust_img(lc, img_path)
-        ax.imshow(img)
-        im = ax.imshow(bldgclass, cmap="tab20b", alpha=0.3)
-        frameon = True
-    else:
-        im = ax.imshow(bldgclass, cmap="tab20b")
-        frameon = False
-    ax.set_title("Building Class")
+    if background:
+        ax.imshow(adjust_img(lc, impath))
+    im = ax.imshow(bldgclss, interpolation="none", cmap=cmap, alpha=alpha)
+    if scatter:
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3, cmap=cmap)
+    # -- Create legend.
+    colors = [im.cmap(im.norm(val)) for val in np.unique(bldgclss) if not np.isnan(val)]
+    patches = [mpatches.Patch(color=colors[ii], label=clss[int(val)])
+               for ii, val in enumerate(vals)]
+    ax.legend(handles=patches, ncol=16, fontsize=7)
+    # -- Format plot.
     ax.set_facecolor("w")
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
-
-    # -- Create legend.
-    values = np.unique(bldgclass)
-    values = values[values < 100]
-    colors = [im.cmap(im.norm(value)) for value in values]
-    patches = [mpatches.Patch(color=colors[int(i)],
-        label="{}".format(lc.dd_bldg_n1_r[int(i)])) for i in values[1:]]
-    plt.legend(handles=patches, ncol=17, prop={"size": 7}, frameon=frameon)
     plt.tight_layout()
     plt.show(block=True)
 
 
-def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
-    """Plot higher level building classification.
+def plot_higher_level_bldgclss(lc, alpha=1, scatter=False, background=False,
+    impath=os.environ["EXIMG"], cmap="viridis"):
+    """Plot higher level classification with option to show background image.
     Args:
         lc (obj) - LightCurve object.
+        alpha (float) - alpha for plotting bbls.
+        scatter (bool) - plot sources?
+        background (bool) - plot example image as background?
+        impath (str) - path to example image.
+        cmap (str) - matplotlib colormap to use.
     """
+    # -- Print status.
+    tstart = start("Plotting higher level BldgClss.")
+    # -- Load bbls, and mask nans.
+    # -- ...bldgclss.npy is made using bbls_to_bldgclss.
+    bbls = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean_bldgclss.npy"))
+    bbls = np.ma.array(bbls, mask=np.isnan(bbls))
+    # -- Convert coords from dict to x and y lists.
+    yy, xx = zip(*lc.coords.values())
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if background:
+        ax.imshow(adjust_img(lc, impath))
+    im = ax.imshow(bbls, interpolation="none", cmap=cmap, alpha=alpha)
+    if scatter:
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3, cmap=cmap)
+    # -- Create legend.
+    labs = ["Residential", "Commmercial", "Mixed Use", "Industrial", "Misc."]
+    colors = [im.cmap(im.norm(val)) for val in range(1, 6)]
+    patches = [mpatches.Patch(color=colors[ii], label="{}".format(labs[ii])) for ii in range(5)]
+    plt.legend(handles=patches, ncol=17)
+    # -- Format plot.
+    ax.set_facecolor("w")
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid("off")
+    plt.tight_layout()
+    plt.show(block=True)
 
-    # -- Load bbls, and replace 0s.
+
+def plot_specific_bbls(bbl_list, lc, alpha=1, scatter=False, background=False,
+    impath=os.environ["EXIMG"], cmap="viridis"):
+    """Plot higher level classification with option to show background image.
+    Args:
+        bbl_list (list) - list of bbls.
+        lc (obj) - LightCurve object.
+        alpha (float) - alpha for plotting bbls.
+        scatter (bool) - plot sources?
+        background (bool) - plot example image as background?
+        impath (str) - path to example image.
+        cmap (str) - matplotlib colormap to use.
+    """
+    # -- Print status.
+    tstart = start("Plotting {} bbls.".format(bbl_list))
+    # -- Load bbls, and mask nans.
+    # -- ...bldgclss.npy is made using bbls_to_bldgclss.
+    bbls = np.load(os.path.join(lc.path_sup,  "12_3_14_bblgrid_clean.npy"))
+    bbls = np.ma.array(bbls, mask=(np.isnan(bbls) | ~np.isin(bbls, bbl_list)))
+    # -- Convert coords from dict to x and y lists.
+    yy, xx = zip(*[lc.coords[kk] for kk, vv in lc.coords_bbls.items() if vv in bbl_list])
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if background:
+        ax.imshow(adjust_img(lc, impath))
+    ax.imshow(bbls, alpha=alpha, cmap=cmap, vmax=1013380040)
+    if scatter:
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3, cmap=cmap)
+    # -- Plot formatting.
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid("off")
+    ax.set_facecolor("w")
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+def plot_income_clusters(lc, clusts=7):
+    """Plot residential median household income clusters on a line.
+    Args:
+        lc (obj) - LightCurve object.
+        clusts (int) - number of clusters to plot.
+    """
+    # -- Print status.
+    tstart = start("Plotting income clustering.")
+    # -- Load dataframe of median household income.
+    df   = bbl_income(lc)
+    # -- Subselect for residential bbls with sources.
+    res  = [kk for kk, vv in lc.coords_cls.items() if vv == 1]
+    bbls = [lc.coords_bbls[idx] for idx in res]
+    df   = df[np.isin(df.BBL, bbls)]
+    vals = np.unique(df.Median_HH_Income[df.Median_HH_Income > 0.])
+    # -- Silhouette score the median incomes.
+    for nclust in range(3, 20):
+        clust = cluster.KMeans(n_clusters=nclust).fit(vals.reshape(-1, 1))
+        scr = silhouette_score(vals.reshape(-1, 1), clust.labels_)
+        print("N Clusters: {}, Silhouette Score: {:.4f}".format(nclust, scr))
+    # -- Perform clustering with nplot.
+    clust = cluster.KMeans(n_clusters=clusts).fit(vals.reshape(-1, 1))
+    # -- Create plot of clustered values on a line.
+    fig, ax = plt.subplots(figsize=(12, 2))
+    ax.scatter(vals, np.zeros_like(vals), c=clust.labels_)
+    # -- Format plot.
+    ax.set_xlabel("Median Household Income")
+    ax.set_yticks([])
+    ax.set_title("Median Household Income Clusters (N: {})".format(nplot))
+    ax.set_xlabel("Median Income")
+    plt.tight_layout()
+    plt.show(block=True)
+
+
+# -- Writing here...
+def plot_income_image(lc, res_only=True, alpha=1, scatter=False, background=False,
+    impath=os.environ["EXIMG"], cmap="viridis"):
+    """Plot higher level classification with option to show background image.
+    Args:
+        bbl_list (list) - list of bbls.
+        lc (obj) - LightCurve object.
+        alpha (float) - alpha for plotting bbls.
+        scatter (bool) - plot sources?
+        background (bool) - plot example image as background?
+        impath (str) - path to example image.
+        cmap (str) - matplotlib colormap to use.
+    """
+    # -- Print status.
+    tstart = start("Plotting bbls income in scene.")
+    # -- Load income df.
+    df = bbl_income(lc).set_index("BBL")
+    # -- Load BBL map.
+    bbls = np.load(os.path.join(lc.path_sup,  "12_3_14_bblgrid_clean.npy"))
+    res  = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean_bldgclss.npy"))
+    # -- Map bbls to income.
+    income = [df.Median_HH_Income.get(bbl, np.nan) for bbl in bbls.ravel()]
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(16, 8))
+    if background:
+        ax.imshow(adjust_img(lc, impath))
+    if res_only:
+        im = ax.imshow(np.ma.array(np.array(income).reshape(*bbls.shape),
+            mask=(res != 1)), alpha=alpha, cmap=cmap)
+    else:
+        im = ax.imshow(np.array(income).reshape(*bbls.shape), alpha=alpha,
+            cmap=cmap)
+    if scatter:
+        yy, xx = zip(*lc.coords.values())
+        ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3)
+    # -- Plot formatting.
+    ax.set_xticks([])
+    ax.set_yticks([])
+    ax.grid("off")
+    ax.set_facecolor("w")
+    divider = make_axes_locatable(ax)
+    cax = divider.append_axes("right", size="5%", pad=0.05)
+    cbar = fig.colorbar(im, cax=cax)
+    cbar.set_alpha(1)
+    cbar.draw_all()
+    plt.tight_layout()
+    plt.show(block=True)
+
+    # -- Dictionary of bbls to median household income.
+    income_dict = lc.dd_bb_income
+
+    # -- Load bbls.
     bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
     bbls = np.load(bbl_path)
-    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
 
     # -- Map bbls to bldgclass.
     bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
@@ -407,120 +549,30 @@ def plot_arbclass(lc, bg_img=False, img_path=os.environ["EXAMPLEIMG"]):
     # -- Map bldgclass to arbclass num.
     arb_img = np.array([lc.dd_bldg_n2.get(bldg, -1)
         for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
-
     arb_img = arb_img.astype(float)
     arb_img[arb_img == -1] = np.nan
 
-    # -- Plot img.
-    fig, ax = plt.subplots(figsize=(16, 8))
-    if bg_img:
-        img = adjust_img(lc, img_path)
-        ax.imshow(img)
-        im = ax.imshow(arb_img, cmap="tab20b", alpha=0.3)
-        frameon=True
-    else:
-        im = ax.imshow(arb_img, cmap="tab20b")
-        frameon=False
+    # -- Map bbl to median income.
+    inc_img = np.array([income_dict.get(bbl, np.nan) for bbl in bbls.ravel()]) \
+        .reshape(bbls.shape[0], bbls.shape[1]).astype(float)
 
-    for ii in range(1, 6):
-        iicoords = [lc.coords[idx] for idx in
-        filter(lambda x: lc.coords_cls[x] == ii, lc.coords_cls.keys())]
-        iixx, iiyy = zip(*iicoords)
-        ax.scatter(np.array(iixx)-20, np.array(iiyy)-20, marker="x", s=5)
-        print("LIGHTCURVES: {} class {} sources".format(len(iixx), ii))
+    if res:
+        inc_img = inc_img * (arb_img == 1.0)
 
-    ax.axhline(1050)
-    ax.axhline(850)
-
-    ax.set_title("Building Class")
-    ax.set_facecolor("w")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid("off")
-
-    # -- Create legend.
-    labs = ["Residential", "Commmercial", "Mixed Use", "Industrial", "Misc."]
-    values = np.unique(arb_img)
-    values = values[values > 0]
-    colors = [im.cmap(im.norm(value)) for value in values]
-    patches = [mpatches.Patch(color=colors[int(i) - 1],
-        label="{}".format(labs[int(i) - 1])) for i in values]
-    plt.legend(handles=patches, ncol=17, frameon=frameon)
-    plt.tight_layout()
-    plt.show(block=True)
-
-
-def plot_specific_bbls(bbl_list, lc, bg_img=False):
-    """"""
-
-    # -- Load bbls, and replace 0s.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-    bbls = np.load(bbl_path)
-    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
-
-    # -- Only select relevant bbls.
-    np.place(bbls, ~np.isin(bbls, center_bbls), -1)
-
-    # -- Map bbls to bldgclass.
-    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-
-    # -- Map bldgclass to arbclass num.
-    arb_img = np.array([lc.dd_bldg_n2.get(bldg, np.nan)
-        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
-
-    # -- Plot img.
-    fig, ax = plt.subplots(figsize=(16, 8))
-    if bg_img:
-        img = adjust_img(lc, img_path)
-        ax.imshow(img)
-        im = ax.imshow(arb_img, cmap="tab20b", alpha=0.3)
-        frameon=True
-    else:
-        im = ax.imshow(arb_img, cmap="tab20b")
-        frameon=False
-
-    ax.set_title("Building Class")
-    ax.set_facecolor("w")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid("off")
-
-    # -- Create legend.
-    labs = ["Residential", "Commmercial", "Mixed Use", "Industrial", "Misc."]
-    values = np.unique(arb_img)
-    values = values[values > 0]
-    colors = [im.cmap(im.norm(value)) for value in range(len(labs))]
-    patches = [mpatches.Patch(color=colors[int(i) - 1],
-        label="{}".format(labs[int(i) - 1])) for i in values]
-    plt.legend(handles=patches, ncol=17, frameon=frameon)
-    plt.tight_layout()
-    plt.show(block=True)
-
-
-def plot_cluster_income(lc, nplot=6):
-    """"""
-
-    # -- Load residential income images.
     inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
-    inc_img = np.load(inc_img_path)
+    np.save(inc_img_path, inc_img)
 
-    # -- What's a reasonable number of clusters?
-    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
-    vals = np.array(src_inc.values())[[ii > 0 for ii in src_inc.values()]]
+    arb_img[arb_img == 1.] = np.nan
+    cmap = mcolors.ListedColormap(["silver"] * 4)
 
-    for nclust in range(3, 20):
-        clust = cluster.KMeans(n_clusters=nclust).fit(vals.reshape(-1, 1))
-        scr = silhouette_score(vals.reshape(-1, 1), clust.labels_)
-        print("N Clusters: {}, Silhouette Score: {:.4f}".format(nclust, scr))
-
-    clust = cluster.KMeans(n_clusters=nplot).fit(vals.reshape(-1, 1))
-    fig, ax = plt.subplots(figsize=(12, 2))
-    ax.scatter(vals, np.zeros_like(vals), c=clust.labels_)
-    ax.set_xlabel("Median Household Income")
+    fig, ax = plt.subplots(figsize=(12, 6))
+    cax = ax.imshow(inc_img)
+    ax.imshow(arb_img, cmap=cmap)
+    cbar = fig.colorbar(cax, fraction=0.045, pad=0.02)
+    ax.set_title("Median Household Income for Residential Buildings")
+    ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_title("Median Household Income Clusters (N: {})".format(nplot))
-    ax.set_xlabel("Median Income")
+    ax.set_facecolor("w")
     plt.tight_layout()
     plt.show()
 
@@ -605,51 +657,6 @@ def plot_income_bigoffs_boxplot(lc):
 
     plt.tight_layout()
     plt.show(block=True)
-
-
-def plot_acs_income(lc, res=True):
-    """"""
-
-    # -- Dictionary of bbls to median household income.
-    income_dict = lc.dd_bb_income
-
-    # -- Load bbls.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-    bbls = np.load(bbl_path)
-
-    # -- Map bbls to bldgclass.
-    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-
-    # -- Map bldgclass to arbclass num.
-    arb_img = np.array([lc.dd_bldg_n2.get(bldg, -1)
-        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
-    arb_img = arb_img.astype(float)
-    arb_img[arb_img == -1] = np.nan
-
-    # -- Map bbl to median income.
-    inc_img = np.array([income_dict.get(bbl, np.nan) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1]).astype(float)
-
-    if res:
-        inc_img = inc_img * (arb_img == 1.0)
-
-    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
-    np.save(inc_img_path, inc_img)
-
-    arb_img[arb_img == 1.] = np.nan
-    cmap = mcolors.ListedColormap(["silver"] * 4)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    cax = ax.imshow(inc_img)
-    ax.imshow(arb_img, cmap=cmap)
-    cbar = fig.colorbar(cax, fraction=0.045, pad=0.02)
-    ax.set_title("Median Household Income for Residential Buildings")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_facecolor("w")
-    plt.tight_layout()
-    plt.show()
 
 
 def plot_scatter_bigoffs_income(lc):
