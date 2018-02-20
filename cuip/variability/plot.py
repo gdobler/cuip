@@ -17,12 +17,13 @@ from scipy.misc import factorial
 from scipy.optimize import curve_fit
 from scipy.stats.stats import linregress
 from sklearn.externals import joblib
-from sklearn.metrics import silhouette_score
+from sklearn.metrics import silhouette_score, accuracy_score
 from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage.filters import gaussian_filter as gf
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 # -- CUIP Imports
 from lightcurve import start, finish
+from prediction import votescore
 
 plt.style.use("ggplot")
 
@@ -883,13 +884,19 @@ def bbls_to_bldgclass(bblmap):
     return bbls
 
 
-def Fig1Scene(lc, save=False):
-    """"""
+def plot_scene(lc, save=False):
+    """PAPER PLOT. This plot illustrates the scene, the residential v.
+    non-residential building, and hte corresponding sources.
+    Args:
+        lc (obj) - LightCurve object.
+        save (bool) - Save the plot?
+    """
+    # -- Load a given night?
     lc.loadnight(lc.meta.index[4])
-    # --
+    # -- Create plot.
     plt.style.use("ggplot")
-    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(7, 10))
-    # --
+    fig, [ax1, ax2, ax3] = plt.subplots(nrows=3, figsize=(7, 7))
+    # -- Define custom cmap.
     cmap = mcolors.LinearSegmentedColormap.from_list("", ["royalblue", "orange",])
     # -- Plot example image.
     img = adjust_img(lc, os.environ["EXIMG"])
@@ -922,19 +929,24 @@ def Fig1Scene(lc, save=False):
     om = plt.scatter([], [], marker="s", c="orange", label="Residential Source")
     leg = ax3.legend(handles=[bm, om, bp, op], loc="upper center", ncol=2,
                      bbox_to_anchor=(0.5, -0.01), fontsize=12)
-    plt.tight_layout(h_pad=0.1)
-    plt.setp(leg.texts, family="helvetica")
+    plt.tight_layout(h_pad=0.1, rect=[0, 0.1, 1, 1])
     if save:
         fig.savefig("Scene.png", bbox_inches="tight")
     plt.show()
 
 
-def Fig2SourceAcc(path, fname_start, save=False):
-    """"""
-    # --
+def source_accuracy(path, fname_start="rf_lcs_only_mdepth6_", save=False):
+    """PAPER PLOT. This plot shows the overall, residential, and non-residential
+    source level accuracy of a given classifier.
+    Args:
+        path (str) - path to saved classification predictions.
+        fname_start (str) - classifier specific names
+        save (bool) - save figure?
+    """
+    # -- Collect all prediction names.
     regex  = re.compile(fname_start + "(\d+).npy")
     fnames = sorted(filter(regex.search, os.listdir(path)))
-    # --
+    # -- Load and calculate accuracies.
     acc, res, nrs = [], [], []
     for fname in fnames:
         pred, test = np.load(os.path.join(path, fname))
@@ -942,7 +954,7 @@ def Fig2SourceAcc(path, fname_start, save=False):
         acc.append(accuracy_score(*zip(*vals)))
         res.append(accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))))
         nrs.append(accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))))
-    # --
+    # -- Create plot.
     fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(8, 2.66))
     plt.rcParams["font.family"] = "helvetica"
     for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
@@ -965,12 +977,20 @@ def Fig2SourceAcc(path, fname_start, save=False):
     plt.show()
 
 
-def Fig3VoteAcc(path, fname_start, rsplit=0.5, save=False):
-    """"""
-    # --
+def vote_accuracy(path, fname_start="rf_lcs_only_mdepth6_", rsplit=0.5,
+    save=False):
+    """PAPER PLOT. This plot shows the overal, residential, and non-Residential
+    voting accuracy for a given classifier.
+    Args:
+        path (str) - path to saved classification predictions.
+        fname_start (str) - classifier specific names.
+        rsplit (float) - residential voting split.
+        save (bool) - save figure?
+    """
+    # -- Collect all prediction names.
     regex  = re.compile(fname_start + "(\d+).npy")
     fnames = sorted(filter(regex.search, os.listdir(path)))
-    # --
+    # -- Load and calculate accuracies.
     acc, res, nrs = [], [], []
     for fname in fnames:
         pred, test = np.load(os.path.join(path, fname))
@@ -978,7 +998,7 @@ def Fig3VoteAcc(path, fname_start, rsplit=0.5, save=False):
         acc.append(vacc)
         res.append(vracc)
         nrs.append(vnracc)
-    # --
+    # -- Create plot.
     fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(8, 2.66))
     plt.rcParams["font.family"] = "helvetica"
     for ii, (ax, vals) in enumerate(zip(fig.axes, [acc, res, nrs])):
@@ -1001,19 +1021,27 @@ def Fig3VoteAcc(path, fname_start, rsplit=0.5, save=False):
     plt.show()
 
 
-def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
-    """"""
+def predictions(fpath, dtrend_path, fname_start="rf_lcs_only_mdepth6_", ndays=74,
+    save=False):
+    """PAPER PLOTS. This function will produce two plots, voting results and
+    proportion of votes for both residential and non-residential sources.
+    Args:
+        fpath (str) - path to predictions.
+        dtrend_path (str) - path to detrended lightcurves.
+        fname_start (str) - classifier specific names.
+        ndays (int) - number of days in sample.
+        save (bool) - save plot?
+    """
     np.random.seed(0)
-    # --
+    # -- Collect all prediction names.
     regex  = re.compile(fname_start + "(\d+).npy")
     fnames = sorted(filter(regex.search, os.listdir(fpath)))
-    # --
-    days, crds, lcs, ons, offs = load_data(lc, path)
-    # --
+    # -- Load data.
+    days, crds, lcs, ons, offs = load_data(lc, dtrend_path)
+    # -- Load data into dataframe.
     data = []
-    data1 = []
     for fname in fnames:
-        _ = _start("Loading {}".format(fname))
+        start("Loading {}".format(fname))
         # -- Load results and conduct vote.
         pred, test = np.load(os.path.join(fpath, fname))
         votes  = (pred.reshape(ndays, pred.size / ndays).mean(axis=0) > 0.5).astype(int)
@@ -1023,25 +1051,16 @@ def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
             lc, crds, lcs, seed=int(fname[len(fname_start): -4]))
         idx = tst[:labels.size]
         coords = [lc.coords[ii] for ii in idx]
-        # --
-        df = pd.DataFrame(coords, columns=["yy", "xx"])
-        df.index = idx
-        df["votes"], df["labs"] = votes, labels
-        df["correct"] = df["votes"] == df["labs"]
+        # -- Create dataframe.
+        df = pd.DataFrame(tst)
+        df["labs"] = tst_labs
+        df["preds"] = pred
         data.append(df)
-        # --
-        df1 = pd.DataFrame(tst)
-        df1["labs"] = tst_labs
-        df1["preds"] = pred
-        data1.append(df1)
     df = pd.concat(data, axis=0)
-    df = df.groupby(df.index).mean()
-    df1 = pd.concat(data1, axis=0)
-    df1.columns = ["idx", "labs", "votes"]
-    df1 = df1.groupby("idx").mean()
-    coords = [lc.coords[ii] for ii in df1.index]
-    df1["yy"], df1["xx"] = zip(*coords)
-    df = df1
+    df.columns = ["idx", "labs", "votes"]
+    df = df.groupby("idx").mean()
+    coords = [lc.coords[ii] for ii in df.index]
+    df["yy"], df["xx"] = zip(*coords)
     # -- Split data for plotting.
     dfr  = df[df.labs == 1.]
     dfrc = dfr[dfr.votes > 0.5]
@@ -1065,12 +1084,15 @@ def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
         ax.set_xticks([])
         ax.set_yticks([])
         ax.set_xlim(0, img.shape[1])
-    # --
+    # -- Plot data.
     ax1.scatter(dfr.xx -20, dfr.yy - 20, c=dfr.votes, cmap=cmap, s=5, marker="s")
-    cval = ax2.scatter(dfn.xx -20, dfn.yy - 20, c=dfn.votes, cmap=cmap, s=5, marker="s", vmax=1, vmin=0)
+    cval = ax2.scatter(dfn.xx -20, dfn.yy - 20, c=dfn.votes, cmap=cmap, s=5,
+        marker="s", vmax=1, vmin=0)
+    # -- Format plot.
     cbar = plt.colorbar(cval, cax=ax3, orientation="horizontal")
     cbar.set_ticks([0., 0.4, 0.5, 0.6, 1.])
-    cbar.ax.set_xticklabels(["Non-Res. 100%", "60%", "50%", "60%", "Res. 100%"], fontsize=12)
+    cbar.ax.set_xticklabels(["Non-Res. 100%", "60%", "50%", "60%", "Res. 100%"],
+        fontsize=12)
     tl = cbar.ax.get_xticklabels()
     tl[0].set_horizontalalignment("left")
     tl[-1].set_horizontalalignment("right")
@@ -1079,17 +1101,24 @@ def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
     if save:
         fig.savefig("VotePercent.png", bbox_inches="tight")
     plt.show()
-    # --
+    # -- Create figure.
     fig, ax1 = plt.subplots(figsize=(12, 6))
+    # -- Plot Data.
     ax1.imshow(img.mean(-1), cmap="gist_gray")
     ax1.set_xticks([])
     ax1.set_yticks([])
     ax1.set_xlim(0, img.shape[1])
-    ax1.scatter(dfrc.xx - 20, dfrc.yy - 20, marker="s", color="orange", s=2, label="Correctly Classified Residential Source")
-    ax1.scatter(dfrw.xx - 20, dfrw.yy - 20, marker="s", color="r", s=2, label="Incorrectly Classified Residential Source")
-    ax1.scatter(dfnc.xx - 20, dfnc.yy - 20, marker="s", color="c", s=2, label="Correctly Classified Non-Residential Source")
-    ax1.scatter(dfnw.xx - 20, dfnw.yy - 20, marker="s", color="b", s=2, label="Incorrectly Classified Non-Residential Source")
-    lgd = ax1.legend(ncol=2, fontsize=12, loc="upper center", bbox_to_anchor=(0.5, -0.01))
+    ax1.scatter(dfrc.xx - 20, dfrc.yy - 20, marker="s", color="orange", s=2,
+        label="Correctly Classified Residential Source")
+    ax1.scatter(dfrw.xx - 20, dfrw.yy - 20, marker="s", color="r", s=2,
+        label="Incorrectly Classified Residential Source")
+    ax1.scatter(dfnc.xx - 20, dfnc.yy - 20, marker="s", color="c", s=2,
+        label="Correctly Classified Non-Residential Source")
+    ax1.scatter(dfnw.xx - 20, dfnw.yy - 20, marker="s", color="b", s=2,
+        label="Incorrectly Classified Non-Residential Source")
+    # -- Format plot.
+    lgd = ax1.legend(ncol=2, fontsize=12, loc="upper center",
+        bbox_to_anchor=(0.5, -0.01))
     for ii in lgd.legendHandles:
         ii._sizes = [20]
     if save:
@@ -1097,17 +1126,24 @@ def Fig4Predictions(fpath, fname_start, path, ndays=74, save=False):
     plt.show()
 
 
-def Fig5VoteNights(path, fname_start, ndays=74, save=False):
-    """"""
+def adding_voting_nights(path, fname_start="rf_lcs_only_mdepth6_", ndays=74,
+    save=False):
+    """PAPER PLOT. Show how voting accuracy increases with n nights.
+    Args:
+        path (str) - path to predictions.
+        fname_start (str) - classifier specific names.
+        ndays (int) - number of nights in sample.
+        save (bool) - save figure?
+    """
     np.random.seed(0)
-    # --
+    # -- Collect prediction filenames.
     regex  = re.compile(fname_start + "(\d+).npy")
     fnames = sorted(filter(regex.search, os.listdir(path)))
-    # --
+    # -- Load data and reshape.
     pred, test = np.load(os.path.join(path, fnames[0]))
     preds = pred.reshape(ndays, pred.size / ndays)
-    # --
     labels = test.reshape(ndays, test.size / ndays)[0]
+    # -- For each number of days bootstrap accuracy 100 times.
     data = []
     for ii in range(1, ndays + 1):
         arr = []
@@ -1118,7 +1154,7 @@ def Fig5VoteNights(path, fname_start, ndays=74, save=False):
             arr.append(acc)
         data.append(arr)
     data = np.array(data)
-    # --
+    # -- Create plot.
     fig, ax1 = plt.subplots(figsize=(5, 3))
     for xval, yy in enumerate(data):
         if xval == 0:
@@ -1127,6 +1163,7 @@ def Fig5VoteNights(path, fname_start, ndays=74, save=False):
         else:
             ax1.scatter(np.array([xval] * 100) + 1, yy, c="k", alpha=0.2, s=2)
     ax1.plot(np.array(range(ndays)) + 1, data.mean(axis=1), label="Mean Accuracy")
+    # -- Format plot.
     ax1.set_ylabel("Accuracy (%)", fontsize=12)
     ax1.set_xlabel("N Observations in Voting", fontsize=12)
     ax1.set_yticks([0.5, 0.6, 0.7, 0.8])
@@ -1140,30 +1177,54 @@ def Fig5VoteNights(path, fname_start, ndays=74, save=False):
     plt.show()
 
 
-def Fig6Table(fpath, tsts, ndays=74):
-    """"""
+def load_vals(lc, path):
+    """Helper function, load training and testing source indexes.
+    Args:
+        lc (obj) - LightCurve object.
+        path (str) - path to ons/offs.
+    Returns:
+        (list) - [trns, tsts]
+    """
+    trns = []
+    tsts = []
+    for ii in range(1, 101):
+        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
+            lc, crds, lcs, seed=ii)
+        trns.append(trn)
+        tsts.append(tst)
+    return [trns, tsts]
+
+
+def print_accuracy_table(fpath, tsts, ndays=74, rsplit=0.5):
+    """PAPER TABLE. Prints out the accuracy values presented in the table.
+    Args:
+        fpath (str) - path to prediction files.
+        tst (array) - array of idx values for each split (use load_vals).
+        ndays (int) - number of days in sample.
+    """
     fstarts = np.unique([fname[:-7] for fname in os.listdir(path)])
     fstarts = filter(lambda x: "full" not in x, fstarts)
     fstarts = filter(lambda x: "coords" not in x, fstarts)
     data = {}
     for fstart in sorted(fstarts):
         print(fstart)
-        # --
+        # -- Collect prediction filena,es
         regex  = re.compile(fstart + "(\d+).npy")
         fnames = sorted(filter(regex.search, os.listdir(path)))
-        # --
+        # -- Set empty lists.
         src, vot, bld, b5, b10, b15 = [], [], [], [], [], []
+        # -- For each set of predictions calculate values.
         for ii, fname in enumerate(fnames):
             pred, test = np.load(os.path.join(path, fname))
-            # --
+            # -- Calculate source values.
             vals = zip(pred, test)
             acc = accuracy_score(*zip(*vals)) * 100
             res = accuracy_score(*zip(*filter(lambda x: x[1] == 1, vals))) * 100
             nrs = accuracy_score(*zip(*filter(lambda x: x[1] == 0, vals))) * 100
             src.append([acc, res, nrs])
-            # --
+            # -- Calculate votes in values.
             vot.append(votescore(pred, test, rsplit=rsplit, pp=False)[1:])
-            # --
+            # -- Format data to select n windows.
             df = pd.DataFrame(np.array([pred, test, tsts[ii]]).T, columns=["pred", "labs", "idx"])
             df["bbl"] = [lc.coords_bbls[idx] for idx in df.idx]
             N = df.groupby("bbl").size()
@@ -1172,27 +1233,27 @@ def Fig6Table(fpath, tsts, ndays=74):
             df = df.groupby("bbl").mean()
             df["pred"] = (df.pred > 0.5).astype(float)
             df["N"] = N / 74
-            # --
+            # -- Calculate values for building.
             acc = accuracy_score(df.pred, df.labs) * 100
             res = accuracy_score(df[df.labs == 1.].pred, df[df.labs == 1.].labs) * 100
             nre = accuracy_score(df[df.labs == 0.].pred, df[df.labs == 0.].labs) * 100
             bld.append([acc, res, nre])
-            # --
+            # -- Calculate values for buildings with 5 or more sources.
             df5 = df[df.N > 4]
             acc = accuracy_score(df5.pred, df5.labs) * 100
             res = accuracy_score(df5[df5.labs == 1.].pred, df5[df5.labs == 1.].labs) * 100
             nre = accuracy_score(df5[df5.labs == 0.].pred, df5[df5.labs == 0.].labs) * 100
             b5.append([acc, res, nre])
-            # --
+            # -- Calculate values for buildings with 10 or more sources.
             df10 = df[df.N > 9]
             acc = accuracy_score(df10.pred, df10.labs) * 100
             res = accuracy_score(df10[df10.labs == 1.].pred, df10[df10.labs == 1.].labs) * 100
             nre = accuracy_score(df10[df10.labs == 0.].pred, df10[df10.labs == 0.].labs) * 100
             b10.append([acc, res, nre])
-        # --
+        # -- Save data.
         data[fstart] = {"src": np.array(src), "vot": np.array(vot),
             "bld": np.array(bld), "b5": np.array(b5), "b10": np.array(b10)}
-    # --
+    # -- Print formatting.
     for kk in fstarts:
         print("{}".format(kk))
         print("Srce -- Acc: {:.2f}, Res: {:.2f}, NRs: {:.2f}".format(
@@ -1207,13 +1268,43 @@ def Fig6Table(fpath, tsts, ndays=74):
             *np.median(data[kk]["b10"], axis=0)))
 
 
-def load_vals(lc, path):
-    """"""
-    trns = []
-    tsts = []
-    for ii in range(1, 101):
-        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
-            lc, crds, lcs, seed=ii)
-        trns.append(trn)
-        tsts.append(tst)
-    return [trns, tsts]
+def are_bigoffs_from_gaussian(lc, res_only=True):
+    """Show the bigoffs of the top 200 source (by number of recognized bigoffs)
+    as violin plots.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+    # -- Parse data
+    data = []
+    leng = []
+    for ii, arr in enumerate(lc.lc_bigoffs.values.T):
+        bigoffs = filter(lambda x: ~np.isnan(x), arr)
+        data.append(bigoffs)
+        leng.append((len(bigoffs), ii))
+    sort = sorted(leng, key=lambda x: x[0], reverse=True)
+    if res_only:
+        res = [kk for kk, vv in lc.coords_cls.items() if vv == 1]
+        sort = [ii for ii in sort if ii[1] + 1 in res]
+        title = "Bigoffs of the Top 200 Sources (Most Recognized Bigoffs; Residential Only)"
+    else:
+        title = "Bigoffs of the Top 200 Sources (Most Recognized Bigoffs)"
+    cnt, idx = zip(*sort[:200])
+    data = [data[ii] for ii in idx]
+    # -- Sort data by median values.
+    med_sort = [np.median(ii) for ii in data]
+    idx_sort = np.array(med_sort).argsort()
+    data = [data[ii] for ii in idx_sort]
+    # -- Create plot.
+    fig, axes = plt.subplots(nrows=8)
+    for ii, num in enumerate(np.arange(0, 200, 25)):
+        fig.axes[ii].violinplot(data[num: num+25], widths=0.9, showmedians=True)
+    for ax in fig.axes:
+        ax.set_ylim(0, 3000)
+        ax.set_xticks([])
+        ax.set_yticks(np.array(range(5)) * 720)
+        ax.set_yticklabels(["{}:00".format(ii % 24) for ii in np.arange(21, 32, 2)], fontsize=8)
+        ax.set_xlim(0.5, 25.5)
+    axes[0].set_title(title, fontsize=12)
+    fig.text(0.07, 0.5, "Time", ha='center', va='center', rotation='vertical', fontsize=10)
+    plt.tight_layout(h_pad=0)
+    plt.show()
