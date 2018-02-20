@@ -16,6 +16,7 @@ from sklearn.cluster import KMeans
 from scipy.misc import factorial
 from scipy.optimize import curve_fit
 from scipy.stats.stats import linregress
+from sklearn.externals import joblib
 from sklearn.metrics import silhouette_score
 from sklearn.preprocessing import MinMaxScaler
 from scipy.ndimage.filters import gaussian_filter as gf
@@ -490,15 +491,16 @@ def plot_income_clusters(lc, clusts=7):
 # -- Writing here...
 def plot_income_image(lc, res_only=True, alpha=1, scatter=False, background=False,
     impath=os.environ["EXIMG"], cmap="viridis"):
-    """Plot higher level classification with option to show background image.
+    """Plot median household income of bbls with option to show background
+    image and scatter sources.
     Args:
-        bbl_list (list) - list of bbls.
         lc (obj) - LightCurve object.
-        alpha (float) - alpha for plotting bbls.
+        res_only (bool) - only show res bbls.
+        alpha (float) - alpha for plotting median household income.
         scatter (bool) - plot sources?
-        background (bool) - plot example image as background?
+        background (bool) - plot background image?
         impath (str) - path to example image.
-        cmap (str) - matplotlib colormap to use.
+        cmap (str) - matplotlib cmap for plotting median household income.
     """
     # -- Print status.
     tstart = start("Plotting bbls income in scene.")
@@ -508,21 +510,23 @@ def plot_income_image(lc, res_only=True, alpha=1, scatter=False, background=Fals
     bbls = np.load(os.path.join(lc.path_sup,  "12_3_14_bblgrid_clean.npy"))
     res  = np.load(os.path.join(lc.path_sup, "12_3_14_bblgrid_clean_bldgclss.npy"))
     # -- Map bbls to income.
+    tstart = start("Mapping bbls to median household income.")
     income = [df.Median_HH_Income.get(bbl, np.nan) for bbl in bbls.ravel()]
+    finish(tstart)
     # -- Create plot.
     fig, ax = plt.subplots(figsize=(16, 8))
     if background:
         ax.imshow(adjust_img(lc, impath))
     if res_only:
-        im = ax.imshow(np.ma.array(np.array(income).reshape(*bbls.shape),
-            mask=(res != 1)), alpha=alpha, cmap=cmap)
+        res_inc = np.ma.array(np.array(income).reshape(*bbls.shape), mask=(res != 1))
+        im = ax.imshow(res_inc, alpha=alpha, cmap=cmap)
     else:
-        im = ax.imshow(np.array(income).reshape(*bbls.shape), alpha=alpha,
-            cmap=cmap)
+        im = ax.imshow(np.array(income).reshape(*bbls.shape), alpha=alpha, cmap=cmap)
     if scatter:
         yy, xx = zip(*lc.coords.values())
         ax.scatter(np.array(xx) - 20, np.array(yy) - 20, marker="x", s=3)
     # -- Plot formatting.
+    ax.set_title("Median Household Income ($USD)")
     ax.set_xticks([])
     ax.set_yticks([])
     ax.grid("off")
@@ -535,379 +539,225 @@ def plot_income_image(lc, res_only=True, alpha=1, scatter=False, background=Fals
     plt.tight_layout()
     plt.show(block=True)
 
-    # -- Dictionary of bbls to median household income.
-    income_dict = lc.dd_bb_income
-
-    # -- Load bbls.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-    bbls = np.load(bbl_path)
-
-    # -- Map bbls to bldgclass.
-    bldgclass = np.array([lc.dd_bbl_bldg.get(bbl, -1) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-
-    # -- Map bldgclass to arbclass num.
-    arb_img = np.array([lc.dd_bldg_n2.get(bldg, -1)
-        for bldg in bldgclass.ravel()]).reshape(bbls.shape[0], bbls.shape[1])
-    arb_img = arb_img.astype(float)
-    arb_img[arb_img == -1] = np.nan
-
-    # -- Map bbl to median income.
-    inc_img = np.array([income_dict.get(bbl, np.nan) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1]).astype(float)
-
-    if res:
-        inc_img = inc_img * (arb_img == 1.0)
-
-    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
-    np.save(inc_img_path, inc_img)
-
-    arb_img[arb_img == 1.] = np.nan
-    cmap = mcolors.ListedColormap(["silver"] * 4)
-
-    fig, ax = plt.subplots(figsize=(12, 6))
-    cax = ax.imshow(inc_img)
-    ax.imshow(arb_img, cmap=cmap)
-    cbar = fig.colorbar(cax, fraction=0.045, pad=0.02)
-    ax.set_title("Median Household Income for Residential Buildings")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.set_facecolor("w")
-    plt.tight_layout()
-    plt.show()
-
 
 def plot_income_bigoffs_hist(lc):
-    """"""
-
-    # -- Load residential income images.
-    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
-    inc_img = np.load(inc_img_path)
-
-    # -- Create masks for 0k-50k and >= 50k income sources.
-    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
-    mask_0k30k = [(inc > 1) & (inc < 30000)  for inc in src_inc.values()]
-    mask_30k90k = [(inc >= 30000) & (inc < 90000)  for inc in src_inc.values()]
-    mask_90k = [inc >= 90000 for inc in src_inc.values()]
-
-    # -- Subselect bigoffs by masks.
-    bigoff_0k30k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_0k30k]].values
-    bigoff_30k90k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_30k90k]].values
-    bigoff_90k = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[mask_90k]].values
-
-    # -- Select all non-nan values.
-    src_0k30k = bigoff_0k30k.ravel()[~np.isnan(bigoff_0k30k.ravel())]
-    src_30k90k = bigoff_30k90k.ravel()[~np.isnan(bigoff_30k90k.ravel())]
-    src_90k = bigoff_90k.ravel()[~np.isnan(bigoff_90k.ravel())]
-
-    # # -- Statistics.
-    # ks_res = stat.ks_2samp(src_50k, src_0k50k)
-    # resampled_0k50k = np.random.choice(src_0k50k, len(src_50k), False)
-    # en_res = stat.entropy(resampled_0k50k, src_50k)
-
+    """3-panel figure showing the histograms of bigoff time split by median
+    household income.
+    Args:
+        lc (obj) - LightCurve object with loaded bigoffs df.
+    """
+    # -- Load income df.
+    df = bbl_income(lc).set_index("BBL")
+    # -- Select bbls with sources and corresponding median household income.
+    bbls = np.unique(lc.coords_bbls.values())
+    bbls = df.index[df.index.isin(bbls)]
+    df   = df.loc[bbls] # -- Subselect df.
+    # -- Subselect bbls from by income.
+    bbls_0k30k  = df[df.Median_HH_Income < 30000].index
+    bbls_30k90k = df[(df.Median_HH_Income > 30000) & (df.Median_HH_Income < 90000)].index
+    bbls_90k    = df[df.Median_HH_Income > 90000].index
+    # -- Subselect bigoffs by the bbls.
+    crds_0k30k  = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_0k30k]) - 1
+    crds_30k90k = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_30k90k]) - 1
+    crds_90k    = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_30k90k]) - 1
+    # -- Only consider residential sources.
+    res_crds = [kk for kk, vv in lc.coords_cls.items() if vv == 1]
+    crds_0k30k = crds_0k30k[np.isin(crds_0k30k, res_crds)]
+    crds_30k90k = crds_30k90k[np.isin(crds_30k90k, res_crds)]
+    crds_90k = crds_90k[np.isin(crds_90k, res_crds)]
+    # -- Pull relevant bigoffs.
+    boffs_0k30k  = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_0k30k].values.flatten())
+    boffs_30k90k = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_30k90k].values.flatten())
+    boffs_90k    = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_90k].values.flatten())
     # -- Plot
-    fig, [ax1, ax2, ax3] = plt.subplots(1, 3, figsize=(12, 4))
-    ax1.hist(src_0k30k, 31)
-    ax2.hist(src_30k90k, 31)
-    ax3.hist(src_90k, 31)
-
-    # ax1.text(20, 20, "Entropy: {:.4f}".format(en_res), color="w", size=8)
-    # ax1.text(20, 120, "KS-test (p-value): {:.4f}".format(ks_res.pvalue), color="w", size=8)
-
+    fig, [ax1, ax2, ax3] = plt.subplots(1, 3, figsize=(12, 4), sharey=True)
+    ax1.hist(boffs_0k30k, 31, normed=True)
+    ax2.hist(boffs_30k90k, 31, normed=True)
+    ax3.hist(boffs_90k, 31, normed=True)
     for ax in [ax1, ax2, ax3]:
-        ax.set_xlabel("Timesteps")
-        ax.set_ylabel("Counts")
+        ax.set_xlabel("Hour")
         ax.set_xlim(0, 3000)
-    ax1.set_title("Median Income < $30,000\nBigoffs", fontsize=12)
-    ax2.set_title("\$30,000 <= Median Income < $90,000\nBigoffs", fontsize=12)
-    ax3.set_title("\$90,000 <= Median Income\nBigoffs", fontsize=12)
-    plt.tight_layout()
+        ax.set_yticks([])
+        ax.set_xticks(np.array(range(9)) * 360)
+        ax.set_xticklabels(["{}".format(ii % 24) for ii in range(21, 30)])
+    ax1.set_ylabel("Relative Counts")
+    ax1.set_title("Median Income < $30,000 Bigoffs", fontsize=12)
+    ax2.set_title("\$30,000 <= Median Income\n< $90,000 Bigoffs", fontsize=12)
+    ax3.set_title("\$90,000 <= Median Income Bigoffs", fontsize=12)
+    plt.tight_layout(w_pad=0.05)
     plt.show(block=True)
 
 
 def plot_income_bigoffs_boxplot(lc):
-    """Plot boxplots comparing bigoffs for summer and winter observations.
+    """Plot boxplots comparing bigoffs for different income brackets.
     Args:
         lc (obj) - LightCurve object.
     """
-
-    # -- Load residential income images.
-    inc_img_path = os.path.join(lc.path_outpu, "LightCurve", "inc_img.npy")
-    inc_img = np.load(inc_img_path)
-
-    # -- Create masks for 0k-50k and >= 50k income sources.
-    src_inc = {k: inc_img[v[1] - 20][v[0] - 20] for k, v in lc.coords.items()}
-    src_50k_mask = [inc >= 50000 for inc in src_inc.values()]
-    src_0k50k_mask = [(inc < 50000) & (inc > 1) for inc in src_inc.values()]
-
-    # -- Subselect bigoffs by masks.
-    src_50k_bigoff = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[src_50k_mask]]
-    src_0k50k_bigoff = lc.bigoffs.loc[lc.nights, np.array(src_inc.keys())[src_0k50k_mask]]
-
+    # -- Load income df.
+    df = bbl_income(lc).set_index("BBL")
+    # -- Select bbls with sources and corresponding median household income.
+    bbls = np.unique(lc.coords_bbls.values())
+    bbls = df.index[df.index.isin(bbls)]
+    df   = df.loc[bbls] # -- Subselect df.
+    # -- Subselect bbls from by income.
+    bbls_0k30k  = df[df.Median_HH_Income < 30000].index
+    bbls_30k90k = df[(df.Median_HH_Income > 30000) & (df.Median_HH_Income < 90000)].index
+    bbls_90k    = df[df.Median_HH_Income > 90000].index
+    # -- Subselect bigoffs by the bbls.
+    crds_0k30k  = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_0k30k]) - 1
+    crds_30k90k = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_30k90k]) - 1
+    crds_90k    = np.array([kk for kk, vv in lc.coords_bbls.items()
+                            if lc.coords_bbls[kk] in bbls_30k90k]) - 1
+    # -- Only consider residential sources.
+    res_crds = [kk for kk, vv in lc.coords_cls.items() if vv == 1]
+    crds_0k30k = crds_0k30k[np.isin(crds_0k30k, res_crds)]
+    crds_30k90k = crds_30k90k[np.isin(crds_30k90k, res_crds)]
+    crds_90k = crds_90k[np.isin(crds_90k, res_crds)]
+    # -- Pull relevant bigoffs.
+    boffs_0k30k  = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_0k30k].values.flatten())
+    boffs_30k90k = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_30k90k].values.flatten())
+    boffs_90k    = filter(lambda x: ~np.isnan(x), lc.lc_bigoffs[crds_90k].values.flatten())
     # -- Plot.
+    labs = ["< $30,000", "\$30,000 - $90,000", "> $90,000"]
     fig, ax = plt.subplots(figsize=(8, 2))
-    ax.boxplot([src_50k_bigoff.median(axis=1).dropna().values,
-                src_0k50k_bigoff.median(axis=1).dropna().values],
-        vert=False, positions=[0, 0.2],
-        labels=["Median Income >= $50,000", "Median Income < $50,000"])
-
-    ax.set_ylim(-0.1, 0.3)
-    ax.set_xlabel("Timesteps")
+    ax.boxplot([boffs_0k30k, boffs_30k90k, boffs_90k], labels=labs, vert=False,
+        positions=[0.0, 0.2, 0.4])
+    # -- Plot format.
+    ax.set_ylim(-0.1, 0.5)
+    ax.set_xticks(np.array(range(9)) * 360)
+    ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 30)])
+    ax.set_xlabel("Time")
     ax.set_title("Bigoffs by Median Household Income")
-
     plt.tight_layout()
     plt.show(block=True)
 
 
 def plot_scatter_bigoffs_income(lc):
-    """"""
-
-    # -- Pull bigoff and income data.
-    cc_inc = {k: lc.dd_bbl_income.get(v, -1) for k, v in lc.coords_bbls.items()}
-    cc_bigoff = lc.bigoffs.loc[lc.nights].median(axis=0).to_dict()
-    inc_bigoff = {v: cc_bigoff.get(k, -1) for k, v in cc_inc.items()}
-    xx, yy = zip(*filter(lambda x: (x[0] > 0) & (x[1] > 0),
-        zip(inc_bigoff.keys(), inc_bigoff.values())))
-
+    """Scatter plot of median household income and median bigoff time for all
+    residential sources.
+    Args:
+        lc (obj) - LightCurve object.
+    """
+    # -- Load income df.
+    df = bbl_income(lc).set_index("BBL")
+    # -- Pull residential idx and bbls.
+    crds = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 1])
+    bbls = [lc.coords_bbls[crd] for crd in crds]
+    # -- Pull median residential bigoffs times.
+    xx = np.nanmedian(lc.lc_bigoffs[crds - 1], axis=0)
+    yy = df.loc[bbls].Median_HH_Income
+    xx, yy = zip(*filter(lambda x: ~np.isnan(x[1]), zip(xx, yy)))
     # -- Best fit.
     mm, bb, r2, _, _ = linregress(xx, yy)
-
-    # -- Plot.
+    # -- Create plot.
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.scatter(xx, yy)
-    ax.plot([0, max(xx) + 10000], [bb, (max(xx) + 10000) * mm + bb])
-    ax.text(1000, 0, "y = {:.5f}x + {:.5f}".format(mm, bb))
-    ax.text(1000, 100, "R2: {:.5f}".format(r2**2))
-    ax.set_xlim(0, max(xx) + 10000)
-    ax.set_xlabel("Median Househould Income")
-    ax.set_ylabel("Median Bigoff Timestep")
-    ax.set_title("Bigoff Timestep v. Household Income For Residential Sources")
+    ax.scatter(xx, yy, label="Residential Sources")
+    ax.plot([0, 8 * 360], [0 * mm + bb, 8 * 360 * mm + bb], c="k", label="Linear Regression")
+    # -- Format plot.
+    ax.text(7 * 360, 170000, "y = {:.2f}x + {:.2f}".format(mm, bb), ha="right")
+    ax.text(7 * 360, 160000, "R2: {:.2f}".format(r2**2), ha="right")
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 29)])
+    ax.set_xlim(0, 7 * 360)
+    ax.set_xlabel("Bigoff Time")
+    ax.set_ylabel("Median Househould Income")
+    ax.set_title("Household Income For Residential Sources by Median Bigoff Time")
+    ax.legend()
     plt.show()
 
 
-def plot_arbclass_timeseries(lc, subsample="Percent", N=0.5, alpha=0.6):
-    """"""
-
-    # -- Use detrended min-maxed lightcurves.
-    dimg = lc.src_lightc
-    dimg[dimg == -9999.] = np.nan
-    dimg = ((dimg - np.nanmin(dimg, axis=0)) /
-            (np.nanmax(dimg, axis=0) - np.nanmin(dimg, axis=0)))
-
+def plot_mean_lightcurve_by_class(lc):
+    """Plot a mean light curve for each higher level building classification.
+    Args:
+        lc (obj) - LightCurves object.
+    """
     # -- Pull source indices for all higher level classifications.
     res, _ = zip(*filter(lambda x: x[1] == 1, lc.coords_cls.items()))
     com, _ = zip(*filter(lambda x: x[1] == 2, lc.coords_cls.items()))
     mix, _ = zip(*filter(lambda x: x[1] == 3, lc.coords_cls.items()))
     ind, _ = zip(*filter(lambda x: x[1] == 4, lc.coords_cls.items()))
     mis, _ = zip(*filter(lambda x: x[1] == 5, lc.coords_cls.items()))
-
-    if subsample == "Percent":
-        res = np.random.choice(res, size=int(len(res) * N), replace=False)
-        com = np.random.choice(com, size=int(len(com) * N), replace=False)
-        mix = np.random.choice(mix, size=int(len(mix) * N), replace=False)
-        # ind = np.random.choice(ind, size=int(len(ind) * N), replace=False)
-        mis = np.random.choice(mis, size=int(len(mis) * N), replace=False)
-    if subsample == "Number":
-        res = np.random.choice(res, size=int(N), replace=False)
-        com = np.random.choice(com, size=int(N), replace=False)
-        mix = np.random.choice(mix, size=int(N), replace=False)
-        # ind = np.random.choice(ind, size=int(N), replace=False)
-        mis = np.random.choice(mis, size=int(N), replace=False)
-
-    res_ts = dimg[:, np.array(res) - 1].mean(axis=1)
-    com_ts = dimg[:, np.array(com) - 1].mean(axis=1)
-    mix_ts = dimg[:, np.array(mix) - 1].mean(axis=1)
-    # ind_ts = dimg[:, np.array(ind) - 1].mean(axis=1)
-    mis_ts = dimg[:, np.array(mis) - 1].mean(axis=1)
-
-    idx = list(res) + list(com) + list(mix) + list(mis)
-    mean_ts = dimg[:, np.array(idx) - 1].mean(axis=1)
-
-    # -- Plot.
-    aa = 0.6
+    # -- Pull mean light curve for each class.
+    res_ts = lc.lcs[:, np.array(res) - 1].mean(axis=1)
+    com_ts = lc.lcs[:, np.array(com) - 1].mean(axis=1)
+    mix_ts = lc.lcs[:, np.array(mix) - 1].mean(axis=1)
+    ind_ts = lc.lcs[:, np.array(ind) - 1].mean(axis=1)
+    mis_ts = lc.lcs[:, np.array(mis) - 1].mean(axis=1)
+    all_ts = lc.lcs.mean(axis=1)
+    # -- Create plot.
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(res_ts - mean_ts, alpha=aa, label="Residential (N: {})".format(len(res)))
-    ax.plot(com_ts - mean_ts, alpha=aa, label="Commercial (N: {})".format(len(com)))
-    ax.plot(mix_ts - mean_ts, alpha=aa, label="Mixed Use (N: {})".format(len(mix)))
-    # ax.plot(ind_ts - mean_ts, label="Ind.") # 1 Src...
-    ax.plot(mis_ts - mean_ts, alpha=aa, label="Misc. (N: {})".format(len(mix)))
-    ax.set_xlim(0, dimg.shape[0])
+    ax.plot(res_ts, label="Residential (N: {})".format(len(res)))
+    ax.plot(com_ts, label="Commercial (N: {})".format(len(com)))
+    ax.plot(mix_ts, label="Mixed Use (N: {})".format(len(mix)))
+    ax.plot(ind_ts, label="Industrial Use (N: {})".format(len(ind)))
+    ax.plot(mis_ts, label="Misc. (N: {})".format(len(mix)))
+    # -- Format plot.
+    ax.set_xlim(0, len(res_ts))
     ax.set_xlabel("Timesteps")
     ax.set_yticklabels([])
-    ax.set_ylabel("Mean I[arb](BuildingClass)  - Mean I[arb]")
-    ax.set_title("Diff. in Mean Lightcurve by Building Class. from Night Mean ({})" \
-        .format(lc.night))
+    ax.set_ylabel("Mean Intensity [arb units]")
+    ax.set_title("Mean Lightcurve By Building Classification ({})".format(lc.night.date()))
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 29)])
     ax.legend()
     plt.show()
 
 
-def plot_src_lightcurves(lc, data, ndates, start_idx, end_idx):
-    """Successively plot lightcurves for each source between start_idx and
-    end_idx from datacube.
+def plot_all_lightcurves(lc):
+    """Plot all lightcurves for a given night as loaded in lc, split across 4
+    panels: residential, commerical, mixed use, and misc.
     Args:
         lc (obj) - LightCurves object.
-        data (array) - Lightcurves data cube.
-        start_idx (int) - sources idx to start plotting.
-        end_idx (int) - sources idx to end plotting.
     """
-
-    for ii in range(start_idx, end_idx):
-        if ii in lc.coords_cls.keys():
-            dates = []
-            rows = []
-            for nn, df in zip(ndates, data):
-                if ii in df.index:
-                    dates.append(nn)
-                    rows.append(np.array(df.loc[ii]))
-
-            fig, ax = plt.subplots(figsize=(12, 6))
-            ax.imshow(np.array(rows), aspect="auto")
-            ax.set_title("Lightcurves For Source {} (BBL: {}, Cls: {})" \
-                .format(ii, lc.coords_bbls[ii], lc.coords_cls[ii]))
-            ax.set_yticks(range(len(dates)))
-            ax.set_yticklabels(dates)
-            ax.set_ylabel("Nights")
-            ax.set_xlabel("Timesteps")
-            plt.show(block=True)
-
-
-def plot_datacube_curves(data, class_sources, night=0):
-    """"""
-
-    res, com, mix, mis = class_sources
-    fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(12, 12))
-
-    for foo in data[:, res - 1, 1].T:
-        ax1.plot(foo, c="k", alpha=0.01)
-    for foo in data[:, com - 1, 1].T:
-        ax2.plot(foo, c="k", alpha=0.01)
-    for foo in data[:, mix - 1, 1].T:
-        ax3.plot(foo, c="k", alpha=0.01)
-    for foo in data[:, mis - 1, 1].T:
-        ax4.plot(foo, c="k", alpha=0.01)
-
-    ax1.set_title("Residential Sources")
-    ax2.set_title("Commercial Sources")
-    ax3.set_title("Mixed Sources")
-    ax4.set_title("Misc. Sources")
-    for ax in [ax1, ax2, ax3, ax4]:
-        ax.set_xlabel("Timesteps")
-        ax.set_ylabel("Intensity [Arb Units]")
-        ax.set_yticks([])
+    # -- Pull source indices for all higher level classifications.
+    res = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 1])
+    com = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 2])
+    mix = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 3])
+    ind = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 4])
+    mis = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 5])
+    # -- Min max all lcs.
+    data = MinMaxScaler().fit_transform(lc.lcs).T
+    # -- Create plot.
+    fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(12, 12),
+        sharey=True, sharex=True)
+    for ii in data[res - 1]:
+        ax1.plot(ii, c="k", alpha=0.01, lw=0.05)
+    for ii in data[com - 1]:
+        ax2.plot(ii, c="k", alpha=0.01, lw=0.05)
+    for ii in data[mix - 1]:
+        ax3.plot(ii, c="k", alpha=0.01, lw=0.05)
+    for ii in data[mis - 1]:
+        ax4.plot(ii, c="k", alpha=0.01, lw=0.05)
+    # -- Format plot.
+    for ax in fig.axes:
         ax.set_ylim(0, 1)
-        ax.set_xlim(0, 2876)
-    plt.tight_layout(pad=2, h_pad=4)
-    plt.show()
-
-
-def plot_srcs_centrality_by_cls(data, class_sources, central="mean"):
-    """"""
-
-    res, com, mix, mis = class_sources
-    fig, [[ax1, ax2], [ax3, ax4]] = plt.subplots(2, 2, figsize=(12, 12))
-
-    if central == "mean":
-        for foo in data[:, res - 1, :].mean(axis=2).T:
-            ax1.plot(foo, c="k", alpha=0.02)
-        for foo in data[:, com - 1, :].mean(axis=2).T:
-            ax2.plot(foo, c="k", alpha=0.02)
-        for foo in data[:, mix - 1, :].mean(axis=2).T:
-            ax3.plot(foo, c="k", alpha=0.02)
-        for foo in data[:, mis - 1, :].mean(axis=2).T:
-            ax4.plot(foo, c="k", alpha=0.02)
-
-    elif central == "median":
-        for foo in np.median(data[:, res - 1, :], axis=2).T:
-            ax1.plot(foo, c="k", alpha=0.02)
-        for foo in np.median(data[:, com - 1, :], axis=2).T:
-            ax2.plot(foo, c="k", alpha=0.02)
-        for foo in np.median(data[:, mix - 1, :], axis=2).T:
-            ax3.plot(foo, c="k", alpha=0.02)
-        for foo in np.median(data[:, mis - 1, :], axis=2).T:
-            ax4.plot(foo, c="k", alpha=0.02)
-
-    elif central == "std":
-        for foo in np.std(data[:, res - 1, :], axis=2).T:
-            ax1.plot(foo, c="k", alpha=0.02)
-        for foo in np.std(data[:, com - 1, :], axis=2).T:
-            ax2.plot(foo, c="k", alpha=0.02)
-        for foo in np.std(data[:, mix - 1, :], axis=2).T:
-            ax3.plot(foo, c="k", alpha=0.02)
-        for foo in np.std(data[:, mis - 1, :], axis=2).T:
-            ax4.plot(foo, c="k", alpha=0.02)
-
-    else:
-        raise("{} is not a valid central measure".format(central))
-
-    ax1.set_title("Residential Sources")
-    ax2.set_title("Commercial Sources")
-    ax3.set_title("Mixed Sources")
-    ax4.set_title("Misc. Sources")
-    for ax in [ax1, ax2, ax3, ax4]:
-        ax.set_xlabel("Timesteps")
-        ax.set_ylabel("Intensity [Arb Units]")
+        ax.set_xlim(0, len(ii))
         ax.set_yticks([])
-        if central == "std":
-            ax.set_ylim(0, 0.5)
-        else:
-            ax.set_ylim(0, 1)
-        ax.set_xlim(0, 2876)
-    plt.tight_layout(pad=2, h_pad=4)
+        ax.set_xticks([])
+    for ax in [ax3, ax4]:
+        ax.set_xticks(np.array(range(8)) * 360)
+        ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 29)])
+        ax.set_xlabel("Time")
+    ax1.set_title("Residential Sources ({})".format(lc.night.date()))
+    ax2.set_title("Commercial Sources ({})".format(lc.night.date()))
+    ax3.set_title("Mixed Sources ({})".format(lc.night.date()))
+    ax4.set_title("Misc. Sources ({})".format(lc.night.date()))
+    plt.tight_layout()
     plt.show()
 
 
-def plot_correct_predictions(lc, pred_df, lclass, rclass, bg_img=False,
-    img_path=os.environ["EXAMPLEIMG"]):
-    """Correct/incorrect predictions.
+def plot_preprocessing(lc, idx=3004):
+    """Plot an example of the preprocessing each lightcurve undergoes.
     Args:
         lc (obj) - LightCurve object.
+        idx (int) - source index to utilize.
     """
-
-    # -- Load bbls, and replace 0s.
-    bbl_path = os.path.join(lc.path_suppl, "12_3_14_bblgrid_clean.npy")
-    bbls = np.load(bbl_path)
-    np.place(bbls, bbls == 0,  np.min(bbls[np.nonzero(bbls)]) - 100)
-
-    # -- Create dict of bbls:left/right.
-    keys = {lc.coords_bbls[k]: 0 for k, v in lclass.items()}
-    keys.update({lc.coords_bbls[k]: 1 for k, v in rclass.items()})
-
-    # -- Map bbls to left right.
-    leftright = np.array([keys.get(bbl, -1) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-    leftright = leftright.astype(float)
-    leftright[leftright == -1] = np.nan
-
-    # -- Create bbl:correct dict.
-    pred_correct = pred_df["correct"].to_dict()
-
-    # -- Map to correct predictions.
-    correct_preds = np.array([pred_correct.get(bbl, np.nan) for bbl in bbls.ravel()]) \
-        .reshape(bbls.shape[0], bbls.shape[1])
-
-    # -- Plot img.
-    fig, ax = plt.subplots(figsize=(16, 8))
-    if bg_img:
-        img = adjust_img(lc, img_path)
-        ax.imshow(img)
-        im = ax.imshow(correct_preds, cmap="cool", alpha=0.3)
-        frameon=True
-    else:
-        im = ax.imshow(correct_preds, cmap="cool")
-        frameon=False
-
-    ax.set_title("Building Level Prediction (50% Cutoffs)")
-    ax.set_facecolor("w")
-    ax.set_xticks([])
-    ax.set_yticks([])
-    ax.grid("off")
-
-    plt.tight_layout()
-    plt.show(block=True)
-
-
-def plot_preprocessing(lc):
-    """"""
+    # -- Preprocess loaded lightcurves.
     data   = MinMaxScaler().fit_transform(lc.lcs)
     gfdata = MinMaxScaler().fit_transform(gf(lc.lcs, (30, 0)))
     med    = gf(np.median(gfdata, axis=1), 30)
@@ -916,167 +766,120 @@ def plot_preprocessing(lc):
                     np.matmul(mev.T, gfdata))
     model = med * fit[0].reshape(-1, 1) + fit[1].reshape(-1, 1)
     dtrend = gfdata.T - model
-    # -- Figure
+    # -- Plot.
     fig, ax = plt.subplots(figsize=(12, 6))
-    ax.plot(data[:, 3004], label="Original LC", alpha=0.5)
-    ax.plot(gfdata[:, 3004], label="GF LC", c="k", alpha=0.5)
+    ax.plot(data[:, idx], label="Original LC", alpha=0.5)
+    ax.plot(gfdata[:, idx], label="GF LC", c="k", alpha=0.5)
     ax.plot(med, label="Median (All LCs)", ls="dashed", c="g")
-    ax.plot(model[3004], label="Fitted Median", ls="dotted", c="g")
-    ax.plot(dtrend[3004], label="Detrended LC", c="k")
+    ax.plot(model[idx], label="Fitted Median", ls="dotted", c="g")
+    ax.plot(dtrend[idx], label="Detrended LC", c="k")
+    # -- Format plot.
     ax.set_xlim(0, lc.lcs.shape[0])
     ax.set_yticks([])
     ax.set_ylabel("Intensity [Arb. Units]")
     ax.set_xlabel("Timesteps")
-    ax.set_title("Example Preprocessing (Src: 3004, {})".format(lc.night.date()))
+    ax.set_title("Example Preprocessing (Src: {}, {})".format(idx, lc.night.date()))
+    ax.set_xticks(np.array(range(8)) * 360)
+    ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 29)])
+    ax.set_xlabel("Time")
     ax.legend()
     plt.show()
 
 
-def eval_n_estimators(lc, path):
-    """"""
-    days, crds, lcs, ons, offs = load_data(lc, path)
-    # --
-    pklpath = os.path.join(lc.path_out, "jvani_pkl")
-    fnames  = os.listdir(pklpath)
-    # --
-    for fname in fnames:
-        _ = _start(fname)
-        # -- Load classifier
-        clf  = joblib.load(os.path.join(pklpath, fname))
-        seed = int(fname[:-4].split("_")[-1])
-        # -- Train/test split keeping BBLs in the same set.
-        trn, trn_data, trn_labs, tst, tst_data, tst_labs = bbl_split(
-            lc, crds, lcs, seed=seed)
-        # -- Whiten and append coords.
-        trn_data, tst_data = preprocess(trn, trn_data, tst, tst_data)
-        # --
-        preds = clf.predict(tst_data)
-        # --
-        np.save("preds_{:03d}.npy".format(seed), np.array([tst_labs, preds]))
+def plot_match(img, ref, match, figsize=(6, 8)):
+    """Plot image, reference, and resulting matches for histogram matching.
+    Args:
+        img (array) - RGB image.
+        ref (array) - RGB reference image.
+        match (array) - RGB histogram matched image
+    """
+    # -- Create figure.
+    fig, [r1, r2, r3, r4] = plt.subplots(nrows=4, ncols=3, figsize=figsize)
+    # -- Plot all reference and image channels.
+    for ii, (ref_ax, img_ax, new_ax) in enumerate([r1, r2, r3, r4]):
+        if ii < 3:
+            ref_ax.imshow(ref[:, :, ii], cmap="gray")
+            img_ax.imshow(img[:, :, ii], cmap="gray")
+            new_ax.imshow(match[:, :, ii], cmap="gray")
+        else:
+            ref_ax.imshow(ref)
+            img_ax.imshow(img)
+            new_ax.imshow(match)
+    # -- Axes labels.
+    for ax, label in zip([r1[0], r2[0], r3[0], r4[0]], ["R", "G", "B", "Color"]):
+        ax.set_ylabel(label)
+    for ax, label in zip(r1, ["Reference", "Image", "Match"]):
+        ax.set_title(label)
+    # -- Formatting.
+    for ii in fig.axes:
+        ii.set_xticks([])
+        ii.set_yticks([])
+    plt.tight_layout(h_pad=0.0001, w_pad=0.1)
+    plt.show(block=True)
 
 
-def summarize_n_estimators(path):
-    """"""
-    acc = []
-    res = []
-    nre = []
-    bst = []
-    for fname in filter(lambda x: x.startswith("preds"), os.listdir(path)):
-        test, pred = np.load(os.path.join(path, fname))
-        vals = zip(test, pred)
-        acc.append(accuracy_score(*zip(*vals)))
-        res.append(accuracy_score(*zip(*filter(lambda x: x[0] == 1, vals))))
-        nre.append(accuracy_score(*zip(*filter(lambda x: x[0] == 0, vals))))
-        src_mn = pred.reshape(74, pred.size / 74).mean(0)
-        scr = []
-        for ii in np.array(range(20)) / 20.:
-            votes = (src_mn > ii).astype(int)
-            v_acc = accuracy_score(test.reshape(74, test.size / 74)[0], votes)
-            scr.append(v_acc)
-        bst.append(scr)
-    return [acc, res, nre, bst]
-
-
-def plot_n_estimator_summary(acc, res, nre, bst):
-    """"""
-    fig, [ax1, ax2, ax3] = plt.subplots(ncols=3, figsize=(12, 4), sharey=True)
-    for ax, data in zip(fig.axes, [acc, res, nre]):
-        ax.hist(data, 30, label="Histogram")
-        ax.axvline(np.median(data), ls="dashed", label="Median", c="k", alpha=0.5)
-        ax.text(np.median(data) + 0.01, 0.5, "{:.2f}%".format(np.median(data) * 100.),
-                rotation=90, color="w", va="bottom")
-    for ax in fig.axes:
-        ax.set_xlim(0, 1)
-        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.])
-        ax.set_xticklabels([0, 20, 40, 60, 80, 100])
-        ax.set_yticks([])
-    ax2.set_xlabel("Accuracy (%)")
-    ax1.set_title("Overall Source Accuracy", fontsize=12)
-    ax2.set_title("Residential Source Accuracy", fontsize=12)
-    ax3.set_title("Non-Residential Source Accuracy", fontsize=12)
-    ax3.legend()
-    plt.suptitle("Accuracy Results From 308 RFs With Different Train/Test Splits")
-    plt.show()
-
-    fig, axes = plt.subplots(nrows=4, ncols=5, figsize=(4*2, 5*2), sharey=True, sharex=True)
-    for ii, ax in enumerate(fig.axes):
-        ax.set_xlim(0, 1)
-        ax.hist(bst[:, ii], 30, label="Histogram")
-        ax.axvline(np.median(bst[:, ii]), ls="dashed", label="Median", c="k",
-                   alpha=0.5)
-        ax.set_xticks([0, 0.2, 0.4, 0.6, 0.8, 1.])
-        ax.set_xticklabels([])
-        ax.set_yticks([])
-        ax.text(0.05, 55, ii / 20.)
-        ax.text(0.05, 47, "{:.2f}%".format(np.median(bst[:, ii]) * 100.))
-    fig.axes[2].set_title("Overall Accuracy From Source Voting")
-    fig.axes[-3].set_xlabel("Accuracy (%)")
-    plt.show()
-
-
-def plot_tscoord_featureimportance(clf):
-    """"""
-    imp = clf.feature_importances_
-    crd = imp[-2:]
-    tms = imp[:-2]
-    fig, ax = plt.subplots(figsize=(8, 2))
-    ax.barh([0, 1], [sum(crd), sum(tms)])
-    ax.set_xticks([])
-    ax.set_yticks([0, 1])
-    ax.set_yticklabels(["Coordinates", "Time Series"])
-    ax.set_xlabel("Cumulative RF Feature Importance")
-    ax.set_title("Cumulative RF Feature Importance By Data Source")
-    ax.text(0.01, 1, "N: {}".format(len(tms)), color="w", va="center")
-    ax.text(0.01, 0, "N: 2", color="w", va="center")
-    ax.text(sum(tms) + 0.01, 1, "{:.2f}".format(sum(tms)), color="k", alpha=0.7, va="center")
-    ax.text(sum(crd) + 0.01, 0, "{:.2f}".format(sum(crd)), color="k", alpha=0.7, va="center")
-    ax.set_xlim(0, 1)
-    plt.tight_layout()
-    plt.show()
-
-
-def plot_feature_importance(clf, ordinal=False, sort=False):
-    """Plot the feature importance of the feature vector, in either real values
-    or ranked order.
+def all_feature_imporances(path, ordinal=False, save=False):
+    """Plot the feature importance of all trained classifier in either real
+    values or ranked order.
     Args:
         clf (obj) - sklearn object with .feature_importances_ attribute.
         ordinal (bool) - Plot real values or rank.
+        save (bool) - save the plot?
     """
-    fimp = clf.feature_importances_
-    fig, ax = plt.subplots(figsize=(12, 4))
-    if ordinal:
-        ax.scatter(fimp.argsort(), range(len(fimp)), s=5)
-        ax.set_yticks([])
-        ax.set_ylabel("Ordinal Feature Importance")
-        ax.set_title("Ordinal Feature Importance In RF Classification")
-    else:
-        if sort:
-            ax.scatter(range(len(fimp)), fimp[fimp.argsort()], s=5)
-        else:
-            ax.scatter(range(len(fimp)), fimp, s=5)
-        ax.set_ylabel("Feature Importance (log10)")
-        ax.set_title("Feature Importance In RF Classification")
-        ax.set_yscale("log", nonposy='clip')
-        ax.set_ylim(ymin=fimp.min() - 0.0001, ymax=fimp.max() + 0.1)
+    # -- Warning.
+    start("THIS WILL TAKE >10 MIN TO LOAD ALL CLASSIFIERS")
+    # -- Pull fnames for all classifiers.
+    fnames = filter(lambda x: x.endswith(".pkl"), os.listdir(path))
+    fimp = []
+    # -- For each classifier load and save the feature importances.
+    for fname in sorted(fnames):
+        clf = joblib.load(os.path.join(path, fname))
+        fimp.append(clf.feature_importances_)
+        start("Loading {}".format(fname), True)
+    # -- Stack feature importances.
+    fimp = np.vstack(fimp)
+    # -- Create plot.
+    fig, ax = plt.subplots(figsize=(6, 3))
+    if ordinal: # -- If ordinal show ranked feature importance.
+        for ii in fimp:
+            sc = ax.scatter(ii.argsort(), range(len(ii)), s=1, c="k", alpha=0.2)
+        handles = [sc]
+        labels  = ["Sample Feature Importance"]
+    else: # -- Show absolute feature importance.
+        for ii in fimp:
+            sc = ax.scatter(range(len(ii)), ii, s=1, c="k", alpha=0.2)
+        ll = ax.plot(fimp.mean(0))
+        handles = [sc, ax.get_lines()[0]]
+        labels  = ["Sample Feature Importance", "Mean Feature Importance"]
+    # -- Format plot.
+        ax.set_ylim(fimp.min(), fimp.max())
+    ax.set_xlim(0, len(fimp[0]))
     ax.set_xticks(np.array(range(8)) * 360)
-    ax.set_xticklabels([21, 22, 23, 24, 1, 2, 3, 4])
-    ax.set_xlabel("Hour")
-    if sort:
-        ax.set_xticks([])
-        ax.set_xlabel("")
-    ax.set_xlim(0, len(fimp) + 10)
+    ax.set_xticklabels(["{}:00".format(ii % 24) for ii in range(21, 29)])
+    ax.set_yticks([])
+    ax.set_xlabel("Time", fontsize=10)
+    ax.set_ylabel("Relative Feature Importance", fontsize=10)
+    ax.legend(handles=handles, labels=labels)
+    if save:
+        fig.savefig("FeatureImportances.png", bbox_inches="tight")
     plt.show()
 
 
 def bbls_to_bldgclass(bblmap):
-    """"""
-    # -- Convert bbl to building class.
+    """Map bbls to higher level building classification.
+    Args:
+        bblmap (array) - 2d array of bbls.
+    Returns:
+        bbls (array) - 2d array of buidling classifications.
+    """
+    # -- Map bbl to building classification.
     bbls = np.array([lc.dd_bbl_bldgclss.get(val, np.nan)
                      for val in bblmap.ravel()]).reshape(*bblmap.shape)
-    bbls = np.array([np.nan if val == "nan" else
-            lc.dd_bldgclss.get([k for k in lc.dd_bldgclss.keys()
-                                if val.startswith(k)][0], np.nan)
-            for val in bbls.ravel()]).reshape(*bbls.shape)
+    # -- Map building classification to higher level.
+    bbls = np.array([np.nan if val == "nan" else lc.dd_bldgclss \
+                     .get([k for k in lc.dd_bldgclss.keys()
+                           if val.startswith(k)][0], np.nan)
+                           for val in bbls.ravel()]).reshape(*bbls.shape)
     return bbls
 
 
@@ -1414,63 +1217,3 @@ def load_vals(lc, path):
         trns.append(trn)
         tsts.append(tst)
     return [trns, tsts]
-
-
-def all_feature_imporances(path, save=False):
-    """"""
-    # --
-    fnames = filter(lambda x: x.endswith(".pkl"), os.listdir(path))
-    fimp = []
-    for fname in fnames:
-        clf = joblib.load(os.path.join(path, fname))
-        fimp.append(clf.feature_importances_)
-    fimp = np.vstack(fimp)
-    # --
-    fig, ax = plt.subplots(figsize=(6, 3))
-    for ii in fimp:
-        ax.scatter(range(len(ii)), ii, s=1, c="k", alpha=0.2)
-    ax.scatter(range(len(ii)), ii, s=1, c="k", alpha=0.2, label="Sample Feature Importance")
-    ax.plot(fimp.mean(0), label="Mean Feature Importance")
-    ax.set_ylim(fimp.min(), fimp.max())
-    ax.set_xlim(0, len(fimp[0]))
-    ax.set_xticks(np.array(range(8)) * 360)
-    ax.set_xticklabels(["21:00", "22:00", "23:00", "24:00" ,"1:00", "2:00", "3:00", "4:00"], fontsize=8)
-    ax.set_yticks([])
-    ax.set_xlabel("Time", fontsize=10)
-    ax.set_ylabel("Relative Feature Importance", fontsize=10)
-    ax.legend()
-    if save:
-        fig.savefig("FeatureImportances.png", bbox_inches="tight")
-    plt.show()
-
-
-def plot_match(img, ref, match, figsize=(6, 8)):
-    """Plot image, reference, and resulting matches.
-    Args:
-        img (array) - RGB image.
-        ref (array) - RGB reference image.
-        match (array) - RGB histogram matched image
-    """
-    # -- Create figure.
-    fig, [r1, r2, r3, r4] = plt.subplots(nrows=4, ncols=3, figsize=figsize)
-    # -- Plot all reference and image channels.
-    for ii, (ref_ax, img_ax, new_ax) in enumerate([r1, r2, r3, r4]):
-        if ii < 3:
-            ref_ax.imshow(ref[:, :, ii], cmap="gray")
-            img_ax.imshow(img[:, :, ii], cmap="gray")
-            new_ax.imshow(match[:, :, ii], cmap="gray")
-        else:
-            ref_ax.imshow(ref)
-            img_ax.imshow(img)
-            new_ax.imshow(match)
-    # -- Axes labels.
-    for ax, label in zip([r1[0], r2[0], r3[0], r4[0]], ["R", "G", "B", "Color"]):
-        ax.set_ylabel(label)
-    for ax, label in zip(r1, ["Reference", "Image", "Match"]):
-        ax.set_title(label)
-    # -- Formatting.
-    for ii in fig.axes:
-        ii.set_xticks([])
-        ii.set_yticks([])
-    plt.tight_layout(h_pad=0.0001, w_pad=0.1)
-    plt.show(block=True)
