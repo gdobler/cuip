@@ -265,7 +265,7 @@ def plot_winter_summer_bigoffs_histrogram(lc, dist_name="burr"):
     plt.show(block=True)
 
 
-def plot_source_locations(lc, idx, impath=os.eniron["EXIMG"], circles=True,
+def plot_source_locations(lc, idx, impath=os.environ["EXIMG"], circles=True,
     windows=True):
     """Plot source locations and appertures on an example image.
     Args:
