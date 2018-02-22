@@ -489,7 +489,6 @@ def plot_income_clusters(lc, clusts=7):
     plt.show(block=True)
 
 
-# -- Writing here...
 def plot_income_image(lc, res_only=True, alpha=1, scatter=False, background=False,
     impath=os.environ["EXIMG"], cmap="viridis"):
     """Plot median household income of bbls with option to show background
@@ -1312,10 +1311,13 @@ def are_bigoffs_from_gaussian(lc, title, res_only=False, median_sort=False,
         sort = [np.max(ii) - np.min(ii) for ii in data]
     idx_sort = np.array(sort).argsort()
     data = [data[ii] for ii in idx_sort]
+    idx = np.array(idx)[idx_sort]
     # -- Create plot.
     fig, axes = plt.subplots(nrows=8)
     for ii, num in enumerate(np.arange(0, 200, 25)):
         fig.axes[ii].violinplot(data[num: num+25], widths=0.9, showmedians=True)
+        for xx, lab in enumerate(idx[num: num+25]):
+            fig.axes[ii].text(xx + 1, 4 * 725, lab, va="top", ha="center", fontsize=7)
         for nn in range(num, num + 25):
             fig.axes[ii].scatter(np.zeros(len(data[nn])) + 1 + nn % 25, data[nn],
                 marker="_", c="k", s=5, zorder=1000)
