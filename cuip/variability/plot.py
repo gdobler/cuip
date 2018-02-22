@@ -1268,7 +1268,9 @@ def print_accuracy_table(fpath, tsts, ndays=74, rsplit=0.5):
             *np.median(data[kk]["b10"], axis=0)))
 
 
-def are_bigoffs_from_gaussian(lc, res_only=True):
+def are_bigoffs_from_gaussian(lc, title, res_only=False, median_sort=False,
+    std_sort=False, extent_sort=False, winter=False, summer=False,
+    weekdays=False, weekends=False):
     """Show the bigoffs of the top 200 source (by number of recognized bigoffs)
     as violin plots.
     Args:
@@ -1277,27 +1279,46 @@ def are_bigoffs_from_gaussian(lc, res_only=True):
     # -- Parse data
     data = []
     leng = []
-    for ii, arr in enumerate(lc.lc_bigoffs.values.T):
+    # -- Pull bigoffs and select winter/summer and weekdays/weekends.
+    lc_bigoffs = lc.lc_bigoffs
+    if winter:
+        lc_bigoffs = lc.lc_bigoffs[lc.lc_bigoffs.index.month > 9]
+    if summer:
+        lc_bigoffs = lc.lc_bigoffs[lc.lc_bigoffs.index.month < 9]
+    if weekdays:
+        lc_bigoffs = lc_bigoffs[lc_bigoffs.index.dayofweek < 5]
+    if weekends:
+        lc_bigoffs = lc_bigoffs[lc_bigoffs.index.dayofweek > 4]
+    lc_bigoffs = lc_bigoffs.values.T
+    # -- Pull data and create a list of lengths.
+    for ii, arr in enumerate(lc_bigoffs):
         bigoffs = filter(lambda x: ~np.isnan(x), arr)
         data.append(bigoffs)
         leng.append((len(bigoffs), ii))
     sort = sorted(leng, key=lambda x: x[0], reverse=True)
+    # -- Filter for residential sources.
     if res_only:
         res = [kk for kk, vv in lc.coords_cls.items() if vv == 1]
         sort = [ii for ii in sort if ii[1] + 1 in res]
-        title = "Bigoffs of the Top 200 Sources (Most Recognized Bigoffs; Residential Only)"
-    else:
-        title = "Bigoffs of the Top 200 Sources (Most Recognized Bigoffs)"
+    # -- Grab the sources with the most bigoffs.
     cnt, idx = zip(*sort[:200])
     data = [data[ii] for ii in idx]
-    # -- Sort data by median values.
-    med_sort = [np.median(ii) for ii in data]
-    idx_sort = np.array(med_sort).argsort()
+    # -- Sorting in plot.
+    if median_sort:
+        sort = [np.median(ii) for ii in data]
+    if std_sort:
+        sort = [np.std(ii) for ii in data]
+    if extent_sort:
+        sort = [np.max(ii) - np.min(ii) for ii in data]
+    idx_sort = np.array(sort).argsort()
     data = [data[ii] for ii in idx_sort]
     # -- Create plot.
     fig, axes = plt.subplots(nrows=8)
     for ii, num in enumerate(np.arange(0, 200, 25)):
         fig.axes[ii].violinplot(data[num: num+25], widths=0.9, showmedians=True)
+        for nn in range(num, num + 25):
+            fig.axes[ii].scatter(np.zeros(len(data[nn])) + 1 + nn % 25, data[nn],
+                marker="_", c="k", s=5, zorder=1000)
     for ax in fig.axes:
         ax.set_ylim(0, 3000)
         ax.set_xticks([])
@@ -1305,6 +1326,37 @@ def are_bigoffs_from_gaussian(lc, res_only=True):
         ax.set_yticklabels(["{}:00".format(ii % 24) for ii in np.arange(21, 32, 2)], fontsize=8)
         ax.set_xlim(0.5, 25.5)
     axes[0].set_title(title, fontsize=12)
-    fig.text(0.07, 0.5, "Time", ha='center', va='center', rotation='vertical', fontsize=10)
+    fig.text(0.06, 0.5, "Time", ha='center', va='center', rotation='vertical', fontsize=10)
     plt.tight_layout(h_pad=0)
+    plt.show()
+
+
+def daily_bigoffs_std(lc, title, res_only=False, winter=False, summer=False):
+    """Plot the mean standard deviation of sources in bigoffs by day of week.
+    Args:
+        lc (obj) - LightCurves object.
+        title (str) - Plot title.
+        res_only (bool) - only use residential sources.
+        winter (bool) - only use winter.
+        summer (bool) - only use summer.
+    """
+    if res_only:
+        res = np.array([kk for kk, vv in lc.coords_cls.items() if vv == 1]) - 1
+        lc_bigoffs = lc.lc_bigoffs[res]
+    else:
+        lc_bigoffs = lc.lc_bigoffs
+    if winter:
+        lc_bigoffs = lc.lc_bigoffs[lc.lc_bigoffs.index.month > 9]
+    if summer:
+        lc_bigoffs = lc.lc_bigoffs[lc.lc_bigoffs.index.month < 9]
+    lc_bigoffs = lc_bigoffs.unstack().reset_index() \
+        .rename(columns={"level_0": "idx", "index": "dd", 0: "bigoffs"})
+    vals = lc_bigoffs.groupby(["idx", lc_bigoffs.dd.dt.dayofweek]).std() \
+        .unstack(level=1).mean(axis=0)
+    fig, ax = plt.subplots(figsize=(8,8))
+    ax.bar(vals.index.labels[1], vals)
+    ax.set_ylabel("Standard Deviation in Bigoffs")
+    ax.set_xlabel("Day of the Week")
+    ax.set_xticklabels(["", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"])
+    ax.set_title(title)
     plt.show()
